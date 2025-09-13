@@ -1,18 +1,32 @@
-import { Patient, getTriageLabel, getTriageColor } from '@/types/patient';
-import { Card, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Clock, User, AlertCircle } from 'lucide-react';
-import { formatDistanceToNow } from 'date-fns';
+import { Patient, getTriageLabel, getTriageColor } from "@/types/patient";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Clock, User, AlertCircle, Trash2 } from "lucide-react";
+import { formatDistanceToNow } from "date-fns";
 
 interface PatientQueueProps {
   patients: Patient[];
   onPatientSelect: (patient: Patient) => void;
+  onPatientRemove: (patientId: string) => void;
   selectedPatientId?: string;
 }
 
-export function PatientQueue({ patients, onPatientSelect, selectedPatientId }: PatientQueueProps) {
+export function PatientQueue({
+  patients,
+  onPatientSelect,
+  onPatientRemove,
+  selectedPatientId,
+}: PatientQueueProps) {
   // Sort patients by triage level (1 is highest priority)
-  const sortedPatients = [...patients].sort((a, b) => a.triageLevel - b.triageLevel);
+  const sortedPatients = [...patients].sort(
+    (a, b) => a.triageLevel - b.triageLevel
+  );
+
+  const handleRemoveClick = (e: React.MouseEvent, patientId: string) => {
+    e.stopPropagation(); // Prevent triggering onPatientSelect
+    onPatientRemove(patientId);
+  };
 
   return (
     <div className="space-y-3">
@@ -33,33 +47,57 @@ export function PatientQueue({ patients, onPatientSelect, selectedPatientId }: P
           <Card
             key={patient.id}
             className={`cursor-pointer transition-all duration-300 hover:shadow-lg hover:scale-[1.02] border-l-4 ${
-              selectedPatientId === patient.id ? 'ring-2 ring-primary shadow-lg bg-primary/5' : 'hover:bg-accent/5'
-            } ${getTriageColor(patient.triageLevel).replace('bg-', 'border-l-')}`}
+              selectedPatientId === patient.id
+                ? "ring-2 ring-primary shadow-lg bg-primary/5"
+                : "hover:bg-accent/5"
+            } ${getTriageColor(patient.triageLevel).replace(
+              "bg-",
+              "border-l-"
+            )}`}
             onClick={() => onPatientSelect(patient)}
           >
             <CardContent className="p-4">
               <div className="flex items-start justify-between mb-2">
                 <div className="flex items-center gap-2">
                   <div
-                    className={`w-3 h-3 rounded-full ${getTriageColor(patient.triageLevel)}`}
+                    className={`w-3 h-3 rounded-full ${getTriageColor(
+                      patient.triageLevel
+                    )}`}
                     aria-label={`Triage level ${patient.triageLevel}`}
                   />
-                  <span className="font-medium text-foreground">{patient.name}</span>
+                  <span className="font-medium text-foreground">
+                    {patient.name}
+                  </span>
                 </div>
-                <Badge
-                  variant="outline"
-                  className={`${getTriageColor(patient.triageLevel)} text-white border-0`}
-                >
-                  {getTriageLabel(patient.triageLevel)}
-                </Badge>
+                <div className="flex items-center gap-2">
+                  <Badge
+                    variant="outline"
+                    className={`${getTriageColor(
+                      patient.triageLevel
+                    )} text-white border-0`}
+                  >
+                    {getTriageLabel(patient.triageLevel)}
+                  </Badge>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 w-6 p-0 hover:bg-destructive hover:text-destructive-foreground"
+                    onClick={(e) => handleRemoveClick(e, patient.id)}
+                    aria-label={`Remove ${patient.name} from queue`}
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </Button>
+                </div>
               </div>
 
               <div className="space-y-1">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <User className="w-3 h-3" />
-                  <span>{patient.age} years, {patient.gender}</span>
+                  <span>
+                    {patient.age} years, {patient.gender}
+                  </span>
                 </div>
-                
+
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <AlertCircle className="w-3 h-3" />
                   <span className="truncate">{patient.chiefComplaint}</span>
@@ -67,24 +105,31 @@ export function PatientQueue({ patients, onPatientSelect, selectedPatientId }: P
 
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Clock className="w-3 h-3" />
-                  <span>Waiting {formatDistanceToNow(patient.arrivalTime)}</span>
+                  <span>
+                    Waiting {formatDistanceToNow(patient.arrivalTime)}
+                  </span>
                 </div>
               </div>
 
               <div className="mt-3 flex items-center gap-2">
                 <div className="flex items-center gap-1">
                   <span className="text-xs text-muted-foreground">HR:</span>
-                  <span className="text-xs font-medium">{patient.vitals.heartRate}</span>
+                  <span className="text-xs font-medium">
+                    {patient.vitals.heartRate}
+                  </span>
                 </div>
                 <div className="flex items-center gap-1">
                   <span className="text-xs text-muted-foreground">BP:</span>
                   <span className="text-xs font-medium">
-                    {patient.vitals.bloodPressure.systolic}/{patient.vitals.bloodPressure.diastolic}
+                    {patient.vitals.bloodPressure.systolic}/
+                    {patient.vitals.bloodPressure.diastolic}
                   </span>
                 </div>
                 <div className="flex items-center gap-1">
                   <span className="text-xs text-muted-foreground">O2:</span>
-                  <span className="text-xs font-medium">{patient.vitals.oxygenSaturation}%</span>
+                  <span className="text-xs font-medium">
+                    {patient.vitals.oxygenSaturation}%
+                  </span>
                 </div>
               </div>
             </CardContent>
