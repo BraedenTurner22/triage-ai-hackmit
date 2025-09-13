@@ -57,6 +57,35 @@ export default {
           border: "hsl(var(--sidebar-border))",
           ring: "hsl(var(--sidebar-ring))",
         },
+        triage: {
+          1: "hsl(var(--triage-1))",
+          2: "hsl(var(--triage-2))",
+          3: "hsl(var(--triage-3))",
+          4: "hsl(var(--triage-4))",
+          5: "hsl(var(--triage-5))",
+        },
+        status: {
+          critical: "hsl(var(--status-critical))",
+          warning: "hsl(var(--status-warning))",
+          stable: "hsl(var(--status-stable))",
+          normal: "hsl(var(--status-normal))",
+        },
+        vitals: {
+          heart: "hsl(var(--vitals-heart))",
+          oxygen: "hsl(var(--vitals-oxygen))",
+          pressure: "hsl(var(--vitals-pressure))",
+          temp: "hsl(var(--vitals-temp))",
+        },
+      },
+      backgroundImage: {
+        'gradient-medical': 'var(--gradient-medical)',
+        'gradient-critical': 'var(--gradient-critical)',
+        'gradient-stable': 'var(--gradient-stable)',
+      },
+      boxShadow: {
+        'card': 'var(--shadow-card)',
+        'hover': 'var(--shadow-hover)',
+        'glow-critical': 'var(--shadow-glow-critical)',
       },
       borderRadius: {
         lg: "var(--radius)",

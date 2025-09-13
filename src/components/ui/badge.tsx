@@ -12,6 +12,11 @@ const badgeVariants = cva(
         secondary: "border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80",
         destructive: "border-transparent bg-destructive text-destructive-foreground hover:bg-destructive/80",
         outline: "text-foreground",
+        triage1: "border-transparent bg-triage-1 text-white",
+        triage2: "border-transparent bg-triage-2 text-white",
+        triage3: "border-transparent bg-triage-3 text-white",
+        triage4: "border-transparent bg-triage-4 text-white",
+        triage5: "border-transparent bg-triage-5 text-white",
       },
     },
     defaultVariants: {
