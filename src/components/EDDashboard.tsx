@@ -19,7 +19,6 @@ export function EDDashboard({ onPatientAdd }: EDDashboardProps) {
     name: '',
     age: '',
     gender: 'Male' as Patient['gender'],
-    triageLevel: 3 as TriageLevel,
     chiefComplaint: '',
     heartRate: '',
     systolic: '',
@@ -27,14 +26,9 @@ export function EDDashboard({ onPatientAdd }: EDDashboardProps) {
     oxygenSaturation: '',
     temperature: '',
     respiratoryRate: '',
-    allergies: [] as string[],
-    medications: [] as string[],
     medicalHistory: [] as string[],
-    notes: '',
   });
 
-  const [newAllergy, setNewAllergy] = useState('');
-  const [newMedication, setNewMedication] = useState('');
   const [newHistory, setNewHistory] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -51,19 +45,29 @@ export function EDDashboard({ onPatientAdd }: EDDashboardProps) {
       respiratoryRate: parseInt(formData.respiratoryRate) || 0,
     };
 
+    // Automatically assign triage level based on vitals (simple rule-based system)
+    let triageLevel: TriageLevel = 5;
+    if (parseInt(formData.heartRate) > 120 || parseInt(formData.systolic) > 180 || parseInt(formData.oxygenSaturation) < 90) {
+      triageLevel = 2;
+    } else if (parseInt(formData.heartRate) > 100 || parseInt(formData.systolic) > 160 || parseInt(formData.oxygenSaturation) < 95) {
+      triageLevel = 3;
+    } else if (parseInt(formData.heartRate) > 90 || parseInt(formData.systolic) > 140) {
+      triageLevel = 4;
+    }
+
     const newPatient: Patient = {
       id: `PAT-${Date.now()}`,
       name: formData.name,
       age: parseInt(formData.age),
       gender: formData.gender,
       arrivalTime: new Date(),
-      triageLevel: formData.triageLevel,
+      triageLevel,
       chiefComplaint: formData.chiefComplaint,
       vitals,
-      allergies: formData.allergies,
-      medications: formData.medications,
+      allergies: [],
+      medications: [],
       medicalHistory: formData.medicalHistory,
-      notes: formData.notes,
+      notes: '',
       status: 'waiting',
       aiSummary: 'AI analysis in progress... Patient presents with symptoms requiring immediate attention based on vital signs and triage assessment.',
     };
@@ -80,7 +84,6 @@ export function EDDashboard({ onPatientAdd }: EDDashboardProps) {
       name: '',
       age: '',
       gender: 'Male',
-      triageLevel: 3,
       chiefComplaint: '',
       heartRate: '',
       systolic: '',
@@ -88,34 +91,19 @@ export function EDDashboard({ onPatientAdd }: EDDashboardProps) {
       oxygenSaturation: '',
       temperature: '',
       respiratoryRate: '',
-      allergies: [],
-      medications: [],
       medicalHistory: [],
-      notes: '',
     });
   };
 
-  const addItem = (type: 'allergy' | 'medication' | 'history') => {
-    if (type === 'allergy' && newAllergy) {
-      setFormData({ ...formData, allergies: [...formData.allergies, newAllergy] });
-      setNewAllergy('');
-    } else if (type === 'medication' && newMedication) {
-      setFormData({ ...formData, medications: [...formData.medications, newMedication] });
-      setNewMedication('');
-    } else if (type === 'history' && newHistory) {
+  const addHistory = () => {
+    if (newHistory) {
       setFormData({ ...formData, medicalHistory: [...formData.medicalHistory, newHistory] });
       setNewHistory('');
     }
   };
 
-  const removeItem = (type: 'allergy' | 'medication' | 'history', index: number) => {
-    if (type === 'allergy') {
-      setFormData({ ...formData, allergies: formData.allergies.filter((_, i) => i !== index) });
-    } else if (type === 'medication') {
-      setFormData({ ...formData, medications: formData.medications.filter((_, i) => i !== index) });
-    } else if (type === 'history') {
-      setFormData({ ...formData, medicalHistory: formData.medicalHistory.filter((_, i) => i !== index) });
-    }
+  const removeHistory = (index: number) => {
+    setFormData({ ...formData, medicalHistory: formData.medicalHistory.filter((_, i) => i !== index) });
   };
 
   return (
@@ -190,62 +178,17 @@ export function EDDashboard({ onPatientAdd }: EDDashboardProps) {
               </div>
             </div>
 
-            {/* Triage and Chief Complaint */}
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="triage">Triage Level</Label>
-                <Select
-                  value={formData.triageLevel.toString()}
-                  onValueChange={(value) => setFormData({ ...formData, triageLevel: parseInt(value) as TriageLevel })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="1">
-                      <span className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-triage-1" />
-                        1 - Resuscitation
-                      </span>
-                    </SelectItem>
-                    <SelectItem value="2">
-                      <span className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-triage-2" />
-                        2 - Emergent
-                      </span>
-                    </SelectItem>
-                    <SelectItem value="3">
-                      <span className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-triage-3" />
-                        3 - Urgent
-                      </span>
-                    </SelectItem>
-                    <SelectItem value="4">
-                      <span className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-triage-4" />
-                        4 - Less Urgent
-                      </span>
-                    </SelectItem>
-                    <SelectItem value="5">
-                      <span className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full bg-triage-5" />
-                        5 - Non-Urgent
-                      </span>
-                    </SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="complaint">Chief Complaint</Label>
-                <Textarea
-                  id="complaint"
-                  value={formData.chiefComplaint}
-                  onChange={(e) => setFormData({ ...formData, chiefComplaint: e.target.value })}
-                  placeholder="Describe the patient's main concern..."
-                  required
-                />
-              </div>
+            {/* Chief Complaint */}
+            <div className="space-y-2">
+              <Label htmlFor="complaint">Chief Complaint</Label>
+              <Textarea
+                id="complaint"
+                value={formData.chiefComplaint}
+                onChange={(e) => setFormData({ ...formData, chiefComplaint: e.target.value })}
+                placeholder="Describe the patient's main concern..."
+                required
+                rows={3}
+              />
             </div>
 
             {/* Vitals */}
@@ -319,70 +262,31 @@ export function EDDashboard({ onPatientAdd }: EDDashboardProps) {
               </div>
             </div>
 
-            {/* Allergies */}
+            {/* Medical History (Optional) */}
             <div className="space-y-2">
-              <Label>Allergies</Label>
+              <Label>Medical History (Optional)</Label>
               <div className="flex gap-2">
                 <Input
-                  value={newAllergy}
-                  onChange={(e) => setNewAllergy(e.target.value)}
-                  placeholder="Enter allergy"
-                  onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addItem('allergy'))}
+                  value={newHistory}
+                  onChange={(e) => setNewHistory(e.target.value)}
+                  placeholder="Enter medical history item"
+                  onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addHistory())}
                 />
-                <Button type="button" onClick={() => addItem('allergy')} size="icon">
+                <Button type="button" onClick={addHistory} size="icon">
                   <Plus className="w-4 h-4" />
                 </Button>
               </div>
               <div className="flex flex-wrap gap-2 mt-2">
-                {formData.allergies.map((allergy, index) => (
-                  <Badge key={index} variant="destructive" className="flex items-center gap-1">
-                    {allergy}
+                {formData.medicalHistory.map((item, index) => (
+                  <Badge key={index} variant="outline" className="flex items-center gap-1">
+                    {item}
                     <X
                       className="w-3 h-3 cursor-pointer"
-                      onClick={() => removeItem('allergy', index)}
+                      onClick={() => removeHistory(index)}
                     />
                   </Badge>
                 ))}
               </div>
-            </div>
-
-            {/* Medications */}
-            <div className="space-y-2">
-              <Label>Current Medications</Label>
-              <div className="flex gap-2">
-                <Input
-                  value={newMedication}
-                  onChange={(e) => setNewMedication(e.target.value)}
-                  placeholder="Enter medication"
-                  onKeyPress={(e) => e.key === 'Enter' && (e.preventDefault(), addItem('medication'))}
-                />
-                <Button type="button" onClick={() => addItem('medication')} size="icon">
-                  <Plus className="w-4 h-4" />
-                </Button>
-              </div>
-              <div className="flex flex-wrap gap-2 mt-2">
-                {formData.medications.map((med, index) => (
-                  <Badge key={index} variant="secondary" className="flex items-center gap-1">
-                    {med}
-                    <X
-                      className="w-3 h-3 cursor-pointer"
-                      onClick={() => removeItem('medication', index)}
-                    />
-                  </Badge>
-                ))}
-              </div>
-            </div>
-
-            {/* Notes */}
-            <div className="space-y-2">
-              <Label htmlFor="notes">Clinical Notes (Optional)</Label>
-              <Textarea
-                id="notes"
-                value={formData.notes}
-                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                placeholder="Additional clinical observations..."
-                rows={3}
-              />
             </div>
 
             <Button type="submit" className="w-full" size="lg">
