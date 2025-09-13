@@ -4,8 +4,10 @@ import { PatientDetails } from "@/components/PatientDetails";
 import { EDDashboard } from "@/components/EDDashboard";
 import { Patient } from "@/types/patient";
 import { mockPatients } from "@/data/mockPatients";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Activity,
   Users,
@@ -19,6 +21,12 @@ import {
 const Index = () => {
   const [patients, setPatients] = useState<Patient[]>(mockPatients);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+  const [currentView, setCurrentView] = useState<"home" | "nurse" | "triage">(
+    "home"
+  );
+  const [showPasswordPopup, setShowPasswordPopup] = useState(false);
+  const [password, setPassword] = useState("");
+  const [passwordError, setPasswordError] = useState("");
 
   const handlePatientAdd = (newPatient: Patient) => {
     setPatients([...patients, newPatient]);
@@ -39,6 +47,30 @@ const Index = () => {
     if (selectedPatient?.id === patientId) {
       setSelectedPatient(null);
     }
+  };
+
+  const handleNurseClick = () => {
+    setShowPasswordPopup(true);
+    setPassword("");
+    setPasswordError("");
+  };
+
+  const handlePasswordSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (password === "huzz") {
+      setShowPasswordPopup(false);
+      setCurrentView("nurse");
+      setPassword("");
+      setPasswordError("");
+    } else {
+      setPasswordError("Incorrect password");
+    }
+  };
+
+  const handlePasswordCancel = () => {
+    setShowPasswordPopup(false);
+    setPassword("");
+    setPasswordError("");
   };
 
   const stats = useMemo(() => {
@@ -78,38 +110,88 @@ const Index = () => {
           <div className="flex items-center gap-3">
             <Activity className="w-10 h-10 animate-pulse" />
             <div>
-              <h1 className="text-3xl font-bold tracking-tight">
-                Emergency Department Triage System
-              </h1>
-              <p className="text-sm opacity-90">
-                Real-time patient management and monitoring
-              </p>
+              <h1 className="text-3xl font-bold tracking-tight">TriageAI</h1>
             </div>
           </div>
         </div>
       </header>
 
       {/* Main Content */}
-      <div className="container mx-auto px-4 py-6">
-        <Tabs defaultValue="nurse" className="w-full">
-          <TabsList className="grid w-full grid-cols-2 mb-6 bg-card/50 backdrop-blur-sm">
-            <TabsTrigger
-              value="nurse"
-              className="flex items-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
-            >
-              <Users className="w-4 h-4" />
-              Nurse Dashboard
-            </TabsTrigger>
-            <TabsTrigger
-              value="ed"
-              className="flex items-center gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
-            >
-              <ClipboardList className="w-4 h-4" />
-              ED Input Dashboard
-            </TabsTrigger>
-          </TabsList>
+      <div className="container mx-auto px-4 py-6 relative">
+        {/* Full Background Gradient for Home */}
+        {currentView === "home" && (
+          <div className="fixed inset-0 bg-gradient-to-br from-red-50 via-pink-50 to-red-100 -z-10"></div>
+        )}
 
-          <TabsContent value="nurse" className="space-y-6">
+        {currentView === "home" && (
+          <div className="flex flex-col items-center justify-center min-h-[70vh] space-y-8 relative">
+            {/* Content */}
+            <div className="relative z-10 text-center space-y-6">
+              <div className="space-y-2">
+                <h1 className="text-5xl font-bold text-red-900">
+                  Welcome to TriageAI
+                </h1>
+                <p className="text-2xl font-semibold text-red-800">
+                  Lightning-Fast Emergency Care
+                </p>
+              </div>
+              <p className="text-lg text-red-700 max-w-2xl mx-auto">
+                AI-powered triage system that instantly prioritizes patients and
+                streamlines emergency department workflows for faster, more
+                efficient care.
+              </p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 w-full max-w-4xl relative z-10">
+              {/* Nurse Dashboard Card */}
+              <Card
+                className="h-80 cursor-pointer transition-all duration-300 hover:shadow-2xl hover:scale-105 bg-gradient-to-br from-blue-50 to-blue-100 border-2 border-blue-200 hover:border-blue-300"
+                onClick={handleNurseClick}
+              >
+                <CardContent className="flex flex-col items-center justify-center h-full p-8">
+                  <div className="bg-blue-500 p-6 rounded-full mb-6">
+                    <Users className="w-12 h-12 text-white" />
+                  </div>
+                  <h3 className="text-2xl font-bold text-blue-900 mb-2">
+                    Nurse Dashboard
+                  </h3>
+                  <p className="text-blue-700 text-center">
+                    Monitor patient queue, view vitals, and manage triage
+                    priorities
+                  </p>
+                </CardContent>
+              </Card>
+
+              {/* Triage Analysis Card */}
+              <Card
+                className="h-80 cursor-pointer transition-all duration-300 hover:shadow-2xl hover:scale-105 bg-gradient-to-br from-red-50 to-red-100 border-2 border-red-200 hover:border-red-300"
+                onClick={() => setCurrentView("triage")}
+              >
+                <CardContent className="flex flex-col items-center justify-center h-full p-8">
+                  <div className="bg-red-500 p-6 rounded-full mb-6">
+                    <ClipboardList className="w-12 h-12 text-white" />
+                  </div>
+                  <h3 className="text-2xl font-bold text-red-900 mb-2">
+                    Begin Triage Analysis
+                  </h3>
+                  <p className="text-red-700 text-center">
+                    Start your AI-powered triage assessment
+                  </p>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        )}
+
+        {currentView === "nurse" && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <button
+                onClick={() => setCurrentView("home")}
+                className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors"
+              >
+                ← Back to Home
+              </button>
+            </div>
             {/* Stats Cards */}
             <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
               <Card className="bg-gradient-to-br from-status-critical/10 to-status-critical/5 border-status-critical/20 hover:shadow-lg transition-all duration-300">
@@ -184,7 +266,7 @@ const Index = () => {
                       <p className="text-sm font-medium text-muted-foreground">
                         Queue Load
                       </p>
-                      <p className="text-3xl font-bold text-accent-foreground">
+                      <p className="text-3xl font-bold text-black">
                         {stats.queuePercentage}
                         <span className="text-lg">%</span>
                       </p>
@@ -193,9 +275,12 @@ const Index = () => {
                   </div>
                   <div className="mt-2 w-full bg-muted rounded-full h-2">
                     <div
-                      className="h-full bg-gradient-to-r from-primary to-accent rounded-full transition-all duration-500"
+                      className="h-full rounded-full transition-all duration-500"
                       style={{
                         width: `${Math.min(stats.queuePercentage, 100)}%`,
+                        backgroundColor: `hsl(${
+                          120 - stats.queuePercentage * 1.2
+                        }, 70%, 50%)`,
                       }}
                     />
                   </div>
@@ -235,12 +320,63 @@ const Index = () => {
                 )}
               </div>
             </div>
-          </TabsContent>
+          </div>
+        )}
 
-          <TabsContent value="ed" className="space-y-6">
+        {currentView === "triage" && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <button
+                onClick={() => setCurrentView("home")}
+                className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors"
+              >
+                ← Back to Home
+              </button>
+            </div>
             <EDDashboard onPatientAdd={handlePatientAdd} />
-          </TabsContent>
-        </Tabs>
+          </div>
+        )}
+
+        {/* Password Popup */}
+        {showPasswordPopup && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <Card className="w-96 max-w-md mx-4">
+              <CardHeader>
+                <CardTitle className="text-center">
+                  Nurse Dashboard Access
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <form onSubmit={handlePasswordSubmit} className="space-y-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="password">Enter Password</Label>
+                    <Input
+                      id="password"
+                      type="password"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Password"
+                      autoFocus
+                    />
+                    {passwordError && (
+                      <p className="text-sm text-red-500">{passwordError}</p>
+                    )}
+                  </div>
+                  <div className="flex gap-2 justify-end">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handlePasswordCancel}
+                    >
+                      Cancel
+                    </Button>
+                    <Button type="submit">Access Dashboard</Button>
+                  </div>
+                </form>
+              </CardContent>
+            </Card>
+          </div>
+        )}
       </div>
     </div>
   );
