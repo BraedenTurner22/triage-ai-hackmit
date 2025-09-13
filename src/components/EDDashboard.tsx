@@ -3,8 +3,18 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
 import { Patient, Vitals } from "@/types/patient";
-import { Mic, MicOff, Volume2, Play, Square, CheckCircle } from "lucide-react";
-import { GoogleGenAI, Modality } from "@google/genai";
+import {
+  Mic,
+  MicOff,
+  Volume2,
+  Play,
+  RotateCcw,
+  CheckCircle,
+  Camera,
+  Video,
+  VideoOff,
+} from "lucide-react";
+import { GoogleGenerativeAI } from "@google/generative-ai";
 
 // Declare Speech Recognition types for TypeScript
 declare global {
@@ -56,12 +66,24 @@ export function EDDashboard({ onPatientAdd }: EDDashboardProps) {
   const [assessmentStarted, setAssessmentStarted] = useState(false);
   const [assessmentComplete, setAssessmentComplete] = useState(false);
   const [transcript, setTranscript] = useState("");
-  const [isConnected, setIsConnected] = useState(false);
+  const [isReady, setIsReady] = useState(false);
+  const [countdown, setCountdown] = useState(0);
+  const [questionAnimating, setQuestionAnimating] = useState(false);
+  const [showVideoSection, setShowVideoSection] = useState(false);
+  const [videoStage, setVideoStage] = useState<
+    "preview" | "face" | "body" | "complete"
+  >("preview");
+  const [isRecording, setIsRecording] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
+  const [videoCountdown, setVideoCountdown] = useState(0);
+  const [videoAnimating, setVideoAnimating] = useState(false);
+  const [aidRequested, setAidRequested] = useState(false);
 
-  const liveSessionRef = useRef<any>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const genAIRef = useRef<GoogleGenAI | null>(null);
+  const genAIRef = useRef<GoogleGenerativeAI | null>(null);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const speechSynthesisRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const videoCountdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Initialize Google AI with environment variable on mount
   useEffect(() => {
@@ -72,7 +94,7 @@ export function EDDashboard({ onPatientAdd }: EDDashboardProps) {
       envApiKey?.substring(0, 10) + "..."
     );
     if (envApiKey && envApiKey !== "your_api_key_here") {
-      initializeGeminiLive(envApiKey);
+      initializeGemini(envApiKey);
     } else {
       console.error(
         "No valid API key found. Please set VITE_GOOGLE_VOICE_API_KEY in your .env file"
@@ -80,383 +102,341 @@ export function EDDashboard({ onPatientAdd }: EDDashboardProps) {
     }
   }, []);
 
-  // Initialize audio context for processing
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      audioContextRef.current = new (window.AudioContext ||
-        (window as any).webkitAudioContext)();
-    }
-  }, []);
-
-  const initializeGeminiLive = async (apiKey: string) => {
+  const initializeGemini = async (apiKey: string) => {
     if (!apiKey.trim()) return;
 
     try {
-      console.log("Initializing Gemini Live API...");
-      genAIRef.current = new GoogleGenAI({ apiKey: apiKey.trim() });
-      setIsConnected(true);
-      console.log("Gemini Live API initialized successfully");
+      console.log("Initializing Gemini API...");
+      genAIRef.current = new GoogleGenerativeAI(apiKey.trim());
+      setIsReady(true);
+      console.log("Gemini API initialized successfully");
     } catch (error) {
-      console.error("Failed to initialize Gemini Live:", error);
-      setIsConnected(false);
+      console.error("Failed to initialize Gemini:", error);
       toast({
-        title: "Initialization Error",
-        description:
-          "Failed to initialize Gemini Live API. Check your API key.",
+        title: "Initialization Failed",
+        description: "Failed to initialize AI. Please check your API key.",
         variant: "destructive",
       });
     }
   };
 
-  const startLiveSession = async () => {
-    if (!genAIRef.current || liveSessionRef.current) return;
-
-    try {
-      console.log("Starting Live session...");
-      setIsSpeaking(true);
-
-      const config = {
-        responseModalities: [Modality.AUDIO],
-        systemInstruction: `You are a friendly medical triage assistant. Ask questions clearly and wait for responses. 
-        When you receive an audio response, acknowledge it briefly and naturally before proceeding to the next question or completing the assessment.
-        Be empathetic and professional in your tone.`,
-      };
-
-      const session = await genAIRef.current.live.connect({
-        model: "gemini-2.5-flash-preview-native-audio-dialog",
-        callbacks: {
-          onopen: () => {
-            console.log("Live session opened");
-            setIsConnected(true);
-          },
-          onmessage: (message: any) => {
-            handleLiveMessage(message);
-          },
-          onerror: (e: any) => {
-            console.error("Live session error:", e);
-            toast({
-              title: "Connection Error",
-              description: "Live session error occurred.",
-              variant: "destructive",
-            });
-          },
-          onclose: (e: any) => {
-            console.log("Live session closed:", e.reason);
-            setIsConnected(false);
-            setIsSpeaking(false);
-            setIsListening(false);
-          },
-        },
-        config,
-      });
-
-      liveSessionRef.current = session;
-
-      // Ask the first question
-      askCurrentQuestion();
-    } catch (error) {
-      console.error("Error starting live session:", error);
-      setIsSpeaking(false);
-      toast({
-        title: "Session Error",
-        description: "Failed to start live session.",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const askCurrentQuestion = async () => {
-    if (!liveSessionRef.current) return;
-
-    const currentQuestion = triageQuestions[currentQuestionIndex];
-    const questionText = `Question ${currentQuestion.id}: ${currentQuestion.question}`;
-
-    try {
-      setIsSpeaking(true);
-      await liveSessionRef.current.sendRealtimeInput({
-        text: `You are conducting a medical triage assessment. Please ask this question in a friendly, clear, professional voice: "${questionText}". Wait for the patient's response after asking.`,
-      });
-    } catch (error) {
-      console.error("Error sending question:", error);
-      toast({
-        title: "Communication Error",
-        description: "Failed to send question. Please try again.",
-        variant: "destructive",
-      });
-      setIsSpeaking(false);
-    }
-  };
-
-  const handleLiveMessage = (message: any) => {
-    if (message.data) {
-      // Handle audio response from AI
-      playAudioResponse(message.data);
-    }
-
-    if (message.serverContent?.turnComplete) {
-      // AI has finished speaking, now listen for user response
-      setIsSpeaking(false);
-      startAudioRecording();
-    }
-
-    // Handle text transcript of user responses
-    if (message.serverContent?.message?.content) {
-      const content = message.serverContent.message.content;
-      if (content.length > 0 && content[0].text) {
-        const transcriptText = content[0].text;
-
-        // Check if this contains a user response (not AI instruction)
-        if (!transcriptText.includes("Please ask this question")) {
-          setTranscript(transcriptText);
-          handleUserResponse(transcriptText);
-        }
+  const speakText = (
+    text: string,
+    startCountdownAfter = false,
+    startVideoCountdownAfter: "face" | "body" | null = null
+  ): Promise<void> => {
+    return new Promise((resolve) => {
+      if (!("speechSynthesis" in window)) {
+        console.error("Speech synthesis not supported");
+        resolve();
+        return;
       }
-    }
-  };
 
-  const handleUserResponse = (responseText: string) => {
-    const currentQuestion = triageQuestions[currentQuestionIndex];
+      // Cancel any ongoing speech
+      speechSynthesis.cancel();
 
-    // Store the response
-    setResponses((prev) => ({
-      ...prev,
-      [currentQuestion.id]: responseText,
-    }));
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 0.9;
+      utterance.pitch = 1;
+      utterance.volume = 0.8;
 
-    // Move to next question or complete assessment
-    if (currentQuestionIndex < triageQuestions.length - 1) {
-      setTimeout(() => {
-        setCurrentQuestionIndex((prev) => prev + 1);
-        askCurrentQuestion();
-      }, 2000);
-    } else {
-      setTimeout(() => {
-        completeAssessment(responseText);
-      }, 2000);
-    }
-  };
-
-  const playAudioResponse = async (audioData: string) => {
-    try {
-      const audioBuffer = Uint8Array.from(atob(audioData), (c) =>
-        c.charCodeAt(0)
-      );
-      const audioBlob = new Blob([audioBuffer], { type: "audio/wav" });
-      const audioUrl = URL.createObjectURL(audioBlob);
-
-      const audio = new Audio(audioUrl);
-      audio.onended = () => {
-        URL.revokeObjectURL(audioUrl);
+      utterance.onstart = () => {
+        setIsSpeaking(true);
+        console.log("AI started speaking:", text);
       };
 
-      await audio.play();
-    } catch (error) {
-      console.error("Error playing audio:", error);
-    }
+      utterance.onend = () => {
+        setIsSpeaking(false);
+        console.log("AI finished speaking");
+        if (startCountdownAfter) {
+          startCountdownTimer();
+        }
+        if (startVideoCountdownAfter) {
+          startVideoCountdownTimer(startVideoCountdownAfter);
+        }
+        resolve();
+      };
+
+      utterance.onerror = (event) => {
+        console.error("Speech synthesis error:", event);
+        setIsSpeaking(false);
+        resolve();
+      };
+
+      speechSynthesisRef.current = utterance;
+      speechSynthesis.speak(utterance);
+    });
   };
 
-  const startAudioRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          sampleRate: 16000,
-          channelCount: 1,
-          echoCancellation: true,
-          noiseSuppression: true,
-        },
+  const startListening = () => {
+    if (
+      !("webkitSpeechRecognition" in window) &&
+      !("SpeechRecognition" in window)
+    ) {
+      toast({
+        title: "Speech Recognition Not Supported",
+        description: "Your browser doesn't support speech recognition.",
+        variant: "destructive",
       });
+      return;
+    }
 
+    const SpeechRecognition =
+      window.SpeechRecognition || window.webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
+
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.lang = "en-US";
+
+    recognition.onstart = () => {
       setIsListening(true);
+      setTranscript("");
+      console.log("Voice recognition started");
+    };
 
-      mediaRecorderRef.current = new MediaRecorder(stream, {
-        mimeType: "audio/webm;codecs=opus",
-      });
+    recognition.onresult = (event) => {
+      let interimTranscript = "";
+      let finalTranscript = "";
 
-      const audioChunks: Blob[] = [];
-
-      mediaRecorderRef.current.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunks.push(event.data);
-        }
-      };
-
-      mediaRecorderRef.current.onstop = async () => {
-        const audioBlob = new Blob(audioChunks, { type: "audio/webm" });
-        await processAudioResponse(audioBlob);
-        stream.getTracks().forEach((track) => track.stop());
-      };
-
-      mediaRecorderRef.current.start();
-
-      // Auto-stop recording after 10 seconds or when user clicks stop
-      setTimeout(() => {
-        if (mediaRecorderRef.current?.state === "recording") {
-          stopAudioRecording();
-        }
-      }, 10000);
-    } catch (error) {
-      console.error("Error starting audio recording:", error);
-      setIsListening(false);
-      toast({
-        title: "Microphone Error",
-        description: "Unable to access microphone. Please check permissions.",
-        variant: "destructive",
-      });
-    }
-  };
-
-  const stopAudioRecording = () => {
-    if (mediaRecorderRef.current?.state === "recording") {
-      mediaRecorderRef.current.stop();
-      setIsListening(false);
-    }
-  };
-
-  const processAudioResponse = async (audioBlob: Blob) => {
-    if (!liveSessionRef.current || !audioContextRef.current) return;
-
-    try {
-      // Convert to the required format (16-bit PCM, 16kHz, mono)
-      const arrayBuffer = await audioBlob.arrayBuffer();
-      const audioBuffer = await audioContextRef.current.decodeAudioData(
-        arrayBuffer
-      );
-
-      // Get audio data from first channel (mono)
-      const pcmData = audioBuffer.getChannelData(0);
-
-      // Resample to 16kHz if necessary
-      const originalSampleRate = audioBuffer.sampleRate;
-      const targetSampleRate = 16000;
-      let resampledData = pcmData;
-
-      if (originalSampleRate !== targetSampleRate) {
-        const resampleRatio = targetSampleRate / originalSampleRate;
-        const newLength = Math.round(pcmData.length * resampleRatio);
-        resampledData = new Float32Array(newLength);
-
-        for (let i = 0; i < newLength; i++) {
-          const srcIndex = i / resampleRatio;
-          const index = Math.floor(srcIndex);
-          const fraction = srcIndex - index;
-
-          if (index + 1 < pcmData.length) {
-            resampledData[i] =
-              pcmData[index] * (1 - fraction) + pcmData[index + 1] * fraction;
-          } else {
-            resampledData[i] = pcmData[index];
-          }
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          finalTranscript += transcript;
+        } else {
+          interimTranscript += transcript;
         }
       }
 
-      // Convert to 16-bit PCM
-      const int16Array = new Int16Array(resampledData.length);
-      for (let i = 0; i < resampledData.length; i++) {
-        const sample = Math.max(-1, Math.min(1, resampledData[i]));
-        int16Array[i] = sample < 0 ? sample * 0x8000 : sample * 0x7fff;
+      setTranscript(finalTranscript + interimTranscript);
+
+      if (finalTranscript) {
+        console.log("Final transcript:", finalTranscript);
+        handleResponse(finalTranscript.trim());
       }
+    };
 
-      const base64Audio = btoa(
-        String.fromCharCode(...new Uint8Array(int16Array.buffer))
-      );
-
-      // Send audio to Live API
-      await liveSessionRef.current.sendRealtimeInput({
-        audio: {
-          data: base64Audio,
-          mimeType: "audio/pcm;rate=16000",
-        },
-      });
-    } catch (error) {
-      console.error("Error processing audio response:", error);
+    recognition.onerror = (event) => {
+      console.error("Speech recognition error:", event.error);
+      setIsListening(false);
       toast({
-        title: "Audio Processing Error",
-        description: "Failed to process your audio. Please try again.",
+        title: "Speech Recognition Error",
+        description: `Error: ${event.error}`,
         variant: "destructive",
       });
-    }
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+      console.log("Voice recognition ended");
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
   };
 
-  const closeLiveSession = () => {
-    if (liveSessionRef.current) {
-      liveSessionRef.current.close();
-      liveSessionRef.current = null;
+  const stopListening = () => {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
     }
-    setIsConnected(false);
-    setIsSpeaking(false);
     setIsListening(false);
   };
 
-  const handleVoiceResponse = (response: string) => {
-    const currentQuestion = triageQuestions[currentQuestionIndex];
+  const startCountdownTimer = () => {
+    console.log(`Starting countdown for question ${currentQuestionIndex + 1}`);
+    setCountdown(10); // 10 second countdown
+    countdownIntervalRef.current = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(countdownIntervalRef.current!);
+          console.log(
+            `Countdown complete for question ${currentQuestionIndex + 1}`
+          );
+          handleCountdownComplete();
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  };
 
-    // Store the response
-    setResponses((prev) => ({
-      ...prev,
-      [currentQuestion.id]: response,
-    }));
+  const clearCountdownTimer = () => {
+    if (countdownIntervalRef.current) {
+      clearInterval(countdownIntervalRef.current);
+      countdownIntervalRef.current = null;
+    }
+    setCountdown(0);
+  };
 
-    // Move to next question or complete assessment
-    if (currentQuestionIndex < triageQuestions.length - 1) {
+  const startVideoCountdownTimer = (stage: "face" | "body") => {
+    console.log(`Starting video countdown for ${stage} recording`);
+    setVideoCountdown(5); // 5 second countdown for video
+    videoCountdownIntervalRef.current = setInterval(() => {
+      setVideoCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(videoCountdownIntervalRef.current!);
+          console.log(`Video countdown complete for ${stage} recording`);
+          handleVideoCountdownComplete(stage);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  };
+
+  const clearVideoCountdownTimer = () => {
+    if (videoCountdownIntervalRef.current) {
+      clearInterval(videoCountdownIntervalRef.current);
+      videoCountdownIntervalRef.current = null;
+    }
+    setVideoCountdown(0);
+  };
+
+  const handleVideoCountdownComplete = (stage: "face" | "body") => {
+    setIsRecording(true);
+    if (stage === "face") {
+      speakText(
+        "Recording your face video now. Please remain still and look at the camera.",
+        false
+      );
+      // Simulate 5 second recording
       setTimeout(() => {
-        setCurrentQuestionIndex((prev) => prev + 1);
-      }, 1000);
-    } else {
-      completeAssessment(response);
+        setIsRecording(false);
+        setVideoAnimating(true);
+        // Smooth transition to body stage
+        setTimeout(() => {
+          setVideoStage("body");
+          setVideoAnimating(false);
+          speakText(
+            "Face recording complete. Now please step back so we can see your full body.",
+            false,
+            "body"
+          );
+        }, 300);
+      }, 5000);
+    } else if (stage === "body") {
+      speakText(
+        "Recording your full body video now. Please remain still.",
+        false
+      );
+      // Simulate 5 second recording
+      setTimeout(() => {
+        setIsRecording(false);
+        setVideoStage("complete");
+        setAssessmentComplete(true);
+        createPatientRecord(responses);
+        speakText(
+          "Video assessment complete. You have been added to the queue.",
+          false
+        );
+      }, 5000);
     }
   };
 
-  const completeAssessment = (finalResponse: string) => {
-    const finalResponses = {
-      ...responses,
-      [triageQuestions[currentQuestionIndex].id]: finalResponse,
-    };
+  const handleCountdownComplete = () => {
+    // Use callback to get current state
+    setCurrentQuestionIndex((prevIndex) => {
+      const simulatedResponse = `Answer to question ${prevIndex + 1}`;
 
-    // Close the live session
-    closeLiveSession();
+      // Store the response immediately
+      setResponses((prevResponses) => ({
+        ...prevResponses,
+        [triageQuestions[prevIndex].id]: simulatedResponse,
+      }));
 
-    // Create patient from responses
-    const vitals: Vitals = {
-      heartRate: 80,
-      bloodPressure: { systolic: 120, diastolic: 80 },
-      oxygenSaturation: 98,
-      temperature: 37.0,
-      respiratoryRate: 16,
-    };
+      // Move to next question or complete assessment
+      if (prevIndex < triageQuestions.length - 1) {
+        const nextIndex = prevIndex + 1;
+
+        // Move to next question
+        setTimeout(() => {
+          setQuestionAnimating(false);
+          const nextQuestion = triageQuestions[nextIndex];
+          speakText(nextQuestion.question, true);
+        }, 300);
+
+        setQuestionAnimating(true);
+        return nextIndex;
+      } else {
+        // All 4 questions complete - move to video section
+        setShowVideoSection(true);
+        setVideoStage("preview");
+        speakText(
+          "Great! Now we'll record two short videos for your medical assessment. First, I'll show you a camera preview.",
+          false
+        );
+        return prevIndex;
+      }
+    });
+  };
+
+  const handleResponse = async (userResponse: string) => {
+    if (!userResponse.trim()) return;
+
+    console.log(`Manual user response: ${userResponse}`);
+
+    // This function is now only used for manual voice input
+    // The progression logic is handled entirely in handleCountdownComplete
+    // to prevent duplicate progression
+  };
+
+  const createPatientRecord = (allResponses: { [key: number]: string }) => {
+    const name = allResponses[1] || "Unknown";
+    const age = parseInt(allResponses[2]) || 0;
+    const gender = (allResponses[3] as "Male" | "Female" | "Other") || "Other";
+    const symptoms = allResponses[4] || "No symptoms provided";
 
     const newPatient: Patient = {
-      id: `PAT-${Date.now()}`,
-      name: finalResponses[1] || "Unknown",
-      age: parseInt(finalResponses[2]) || 0,
-      gender: (finalResponses[3] as Patient["gender"]) || "Other",
+      id: Date.now().toString(),
+      name,
+      age,
+      gender,
+      chiefComplaint: symptoms,
       arrivalTime: new Date(),
-      triageLevel: 3, // Will be updated by AI analysis
-      chiefComplaint: finalResponses[4] || "No symptoms described",
-      vitals,
+      triageLevel: 3, // Default to moderate
+      vitals: {
+        temperature: 98.6,
+        bloodPressure: {
+          systolic: 120,
+          diastolic: 80,
+        },
+        heartRate: 80,
+        respiratoryRate: 16,
+        oxygenSaturation: 98,
+      },
       allergies: [],
       medications: [],
       medicalHistory: [],
-      notes: `Gemini Live Voice Assessment - Symptoms: ${finalResponses[4]}`,
       status: "waiting",
-      aiSummary:
-        "Live voice-based triage assessment completed using Gemini Live API.",
     };
 
     onPatientAdd(newPatient);
-    setAssessmentComplete(true);
 
     toast({
-      title: "Assessment Complete",
-      description: `Triage assessment completed for ${newPatient.name}.`,
+      title: "Patient Added",
+      description: `${name} has been added to the queue`,
     });
   };
 
   const startAssessment = async () => {
+    if (!isReady) {
+      toast({
+        title: "System Not Ready",
+        description: "Please wait for the AI to initialize.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setAssessmentStarted(true);
     setCurrentQuestionIndex(0);
     setResponses({});
     setAssessmentComplete(false);
-    await startLiveSession();
+    setQuestionAnimating(false);
+
+    // Start with first question
+    const welcomeMessage = `Hello! I'm your AI triage nurse. I'll ask you a few questions to help assess your condition. Let's begin. ${triageQuestions[0].question}`;
+    await speakText(welcomeMessage, true); // Start countdown after welcome message
   };
 
   const resetAssessment = () => {
@@ -465,207 +445,539 @@ export function EDDashboard({ onPatientAdd }: EDDashboardProps) {
     setResponses({});
     setAssessmentComplete(false);
     setTranscript("");
-    closeLiveSession();
-    stopAudioRecording();
+    setQuestionAnimating(false);
+    setShowVideoSection(false);
+    setVideoStage("preview");
+    setIsRecording(false);
+    setShowPreview(false);
+    setVideoCountdown(0);
+    setVideoAnimating(false);
+    setAidRequested(false);
+
+    // Clear countdown timers
+    clearCountdownTimer();
+    clearVideoCountdownTimer();
+
+    // Stop any ongoing speech
+    if (speechSynthesis.speaking) {
+      speechSynthesis.cancel();
+    }
+    setIsSpeaking(false);
+
+    // Stop listening
+    stopListening();
   };
 
-  const currentQuestion = triageQuestions[currentQuestionIndex];
+  const handleAidRequest = () => {
+    setAidRequested(true);
+    console.log("Emergency aid requested");
+    // Could also add additional logging or API calls here for tracking
+  };
 
-  if (!assessmentStarted) {
-    return (
-      <div className="max-w-2xl mx-auto text-center">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center justify-center gap-2 text-2xl">
-              <Volume2 className="w-6 h-6" />
-              Voice-Powered Triage Assessment
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <p className="text-lg text-muted-foreground">
-              Our AI will ask you 4 questions and listen to your responses.
-              Please ensure your microphone is enabled.
-            </p>
-            <Button onClick={startAssessment} size="lg" className="w-full">
-              <Play className="w-4 h-4 mr-2" />
-              Start Voice Assessment
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+  const askCurrentQuestion = async () => {
+    if (currentQuestionIndex < triageQuestions.length) {
+      // Cancel any ongoing speech first
+      if (speechSynthesis.speaking) {
+        speechSynthesis.cancel();
+        setIsSpeaking(false);
+      }
 
-  if (assessmentComplete) {
-    return (
-      <div className="max-w-2xl mx-auto text-center">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center justify-center gap-2 text-2xl text-green-600">
-              <CheckCircle className="w-6 h-6" />
-              Assessment Complete
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <p className="text-lg">
-              Thank you! Your triage assessment has been completed and you've
-              been added to the queue.
-            </p>
-            <div className="bg-muted/50 rounded-lg p-4">
-              <h3 className="font-semibold mb-2">Your Responses:</h3>
-              <div className="text-left space-y-2">
-                {Object.entries(responses).map(([questionId, response]) => {
-                  const question = triageQuestions.find(
-                    (q) => q.id === parseInt(questionId)
-                  );
+      // Clear any countdown timer
+      clearCountdownTimer();
+
+      const question = triageQuestions[currentQuestionIndex];
+      await speakText(question.question, true); // Start countdown after repeating question
+    }
+  };
+
+  const getCurrentQuestion = () => {
+    if (currentQuestionIndex >= triageQuestions.length) return null;
+    return triageQuestions[currentQuestionIndex];
+  };
+
+  const currentQuestion = getCurrentQuestion();
+
+  return (
+    <div className="p-6">
+      <div className="max-w-4xl mx-auto">
+        {!assessmentStarted ? (
+          <Card className="border-0 shadow-2xl bg-white/80 backdrop-blur-sm">
+            <CardHeader className="text-center pb-8">
+              <CardTitle className="flex items-center justify-center gap-3 text-3xl font-bold text-gray-800">
+                <Volume2 className="h-8 w-8 text-red-600" />
+                Voice Triage Assessment
+              </CardTitle>
+              <p className="text-xl text-gray-600 mt-4">
+                A few questions will be asked to assess your condition.
+              </p>
+            </CardHeader>
+            <CardContent className="text-center space-y-8">
+              <Button
+                onClick={startAssessment}
+                disabled={!isReady}
+                size="lg"
+                className="text-xl py-6 px-12 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 shadow-lg transform hover:scale-105 transition-all duration-200"
+              >
+                <Play className="h-6 w-6 mr-3" />
+                Start Voice Assessment
+              </Button>
+
+              <div className="space-y-4">
+                {!aidRequested ? (
+                  <Button
+                    onClick={handleAidRequest}
+                    disabled={!isReady}
+                    size="sm"
+                    className="text-sm py-2 px-4 bg-gradient-to-r from-red-600 to-red-700 hover:from-red-700 hover:to-red-800 shadow transform hover:scale-105 transition-all duration-200"
+                  >
+                    Can't speak? Click to receive aid
+                  </Button>
+                ) : (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-3 max-w-xs mx-auto">
+                    <CheckCircle className="h-5 w-5 text-green-500 mx-auto mb-2" />
+                    <p className="text-sm text-green-700 font-medium text-center">
+                      Aid has been requested. You will receive help shortly.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {!isReady && (
+                <div className="flex items-center justify-center gap-3">
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-red-600"></div>
+                  <p className="text-lg text-yellow-600">Initializing AI...</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="space-y-8">
+            {showVideoSection ? (
+              <Card className="border-0 shadow-2xl bg-white/90 backdrop-blur-sm">
+                <CardContent className="text-center py-16">
+                  <div className="h-24 w-24 bg-red-500 rounded-full mx-auto mb-6 flex items-center justify-center">
+                    <Video className="h-12 w-12 text-white" />
+                  </div>
+
+                  {videoStage === "preview" && (
+                    <>
+                      <h3 className="text-4xl font-bold text-red-700 mb-4">
+                        Video Assessment
+                      </h3>
+                      <p className="text-xl text-gray-600 mb-8">
+                        We'll record two short videos: one of your face and one
+                        of your full body for medical assessment
+                      </p>
+
+                      {/* Video Preview Placeholder */}
+                      <div className="bg-gray-900 rounded-lg mx-auto mb-6 w-80 h-60 flex items-center justify-center">
+                        <div className="text-center text-gray-400">
+                          <Camera className="h-16 w-16 mx-auto mb-4" />
+                          <p className="text-lg">Camera Preview</p>
+                          <p className="text-sm">
+                            Camera access will be requested
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="space-y-4">
+                        <Button
+                          onClick={() => {
+                            setShowPreview(true);
+                            setVideoStage("face");
+                            speakText(
+                              "Now we'll record a video of your face. Please look directly at the camera.",
+                              false,
+                              "face"
+                            );
+                          }}
+                          size="lg"
+                          className="text-xl py-4 px-8 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800"
+                        >
+                          <Video className="h-6 w-6 mr-3" />
+                          Start Video Assessment
+                        </Button>
+                      </div>
+                    </>
+                  )}
+
+                  {videoStage === "face" && (
+                    <div
+                      className={`transition-all duration-300 ${
+                        videoAnimating
+                          ? "opacity-0 transform translate-y-4"
+                          : "opacity-100 transform translate-y-0"
+                      }`}
+                    >
+                      <h3 className="text-4xl font-bold text-red-700 mb-4">
+                        Face Video Recording
+                      </h3>
+                      <p className="text-xl text-gray-600 mb-8">
+                        Please look directly at the camera. Recording will start
+                        automatically.
+                      </p>
+
+                      {/* Face Video Recording Placeholder */}
+                      <div className="bg-gray-900 rounded-lg mx-auto mb-6 w-80 h-60 flex items-center justify-center relative">
+                        <div className="text-center text-gray-400">
+                          <Video className="h-16 w-16 mx-auto mb-4" />
+                          <p className="text-lg">Face Video Recording</p>
+                          {isRecording && (
+                            <div className="absolute top-4 right-4 w-4 h-4 bg-red-500 rounded-full animate-pulse"></div>
+                          )}
+                        </div>
+                      </div>
+
+                      {isSpeaking && (
+                        <div className="flex items-center justify-center gap-4 py-8">
+                          <div className="flex space-x-2">
+                            <div className="w-3 h-3 bg-red-500 rounded-full animate-bounce"></div>
+                            <div
+                              className="w-3 h-3 bg-red-600 rounded-full animate-bounce"
+                              style={{ animationDelay: "0.1s" }}
+                            ></div>
+                            <div
+                              className="w-3 h-3 bg-red-500 rounded-full animate-bounce"
+                              style={{ animationDelay: "0.2s" }}
+                            ></div>
+                          </div>
+                          <p className="text-2xl text-red-600 font-semibold">
+                            AI is speaking...
+                          </p>
+                        </div>
+                      )}
+
+                      {videoCountdown > 0 && !isSpeaking && !isRecording && (
+                        <div className="space-y-6">
+                          <div className="text-center">
+                            <div className="text-6xl font-bold text-red-600 mb-4">
+                              {videoCountdown}
+                            </div>
+                            <p className="text-2xl text-gray-600">
+                              Get ready for face recording
+                            </p>
+                          </div>
+                          <div className="flex justify-center">
+                            <div className="relative">
+                              <Video className="h-16 w-16 text-red-500 animate-pulse" />
+                              <div className="absolute inset-0 h-16 w-16 border-4 border-red-500 rounded-full animate-ping"></div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {isRecording && (
+                        <div className="space-y-4">
+                          <div className="text-2xl font-bold text-red-600">
+                            Recording Face Video...
+                          </div>
+                          <div className="flex items-center justify-center gap-2">
+                            <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
+                            <div
+                              className="w-3 h-3 bg-red-500 rounded-full animate-pulse"
+                              style={{ animationDelay: "0.2s" }}
+                            ></div>
+                            <div
+                              className="w-3 h-3 bg-red-500 rounded-full animate-pulse"
+                              style={{ animationDelay: "0.4s" }}
+                            ></div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {videoStage === "body" && (
+                    <div
+                      className={`transition-all duration-300 ${
+                        videoAnimating
+                          ? "opacity-0 transform translate-y-4"
+                          : "opacity-100 transform translate-y-0"
+                      }`}
+                    >
+                      <h3 className="text-4xl font-bold text-red-700 mb-4">
+                        Full Body Video Recording
+                      </h3>
+                      <p className="text-xl text-gray-600 mb-8">
+                        Please step back so your entire body is visible.
+                        Recording will start automatically.
+                      </p>
+
+                      {/* Body Video Recording Placeholder */}
+                      <div className="bg-gray-900 rounded-lg mx-auto mb-6 w-80 h-60 flex items-center justify-center relative">
+                        <div className="text-center text-gray-400">
+                          <Video className="h-16 w-16 mx-auto mb-4" />
+                          <p className="text-lg">Body Video Recording</p>
+                          {isRecording && (
+                            <div className="absolute top-4 right-4 w-4 h-4 bg-red-500 rounded-full animate-pulse"></div>
+                          )}
+                        </div>
+                      </div>
+
+                      {isSpeaking && (
+                        <div className="flex items-center justify-center gap-4 py-8">
+                          <div className="flex space-x-2">
+                            <div className="w-3 h-3 bg-red-500 rounded-full animate-bounce"></div>
+                            <div
+                              className="w-3 h-3 bg-red-600 rounded-full animate-bounce"
+                              style={{ animationDelay: "0.1s" }}
+                            ></div>
+                            <div
+                              className="w-3 h-3 bg-red-500 rounded-full animate-bounce"
+                              style={{ animationDelay: "0.2s" }}
+                            ></div>
+                          </div>
+                          <p className="text-2xl text-red-600 font-semibold">
+                            AI is speaking...
+                          </p>
+                        </div>
+                      )}
+
+                      {videoCountdown > 0 && !isSpeaking && !isRecording && (
+                        <div className="space-y-6">
+                          <div className="text-center">
+                            <div className="text-6xl font-bold text-red-600 mb-4">
+                              {videoCountdown}
+                            </div>
+                            <p className="text-2xl text-gray-600">
+                              Get ready for body recording
+                            </p>
+                          </div>
+                          <div className="flex justify-center">
+                            <div className="relative">
+                              <Video className="h-16 w-16 text-red-500 animate-pulse" />
+                              <div className="absolute inset-0 h-16 w-16 border-4 border-red-500 rounded-full animate-ping"></div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {isRecording && (
+                        <div className="space-y-4">
+                          <div className="text-2xl font-bold text-red-600">
+                            Recording Full Body Video...
+                          </div>
+                          <div className="flex items-center justify-center gap-2">
+                            <div className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></div>
+                            <div
+                              className="w-3 h-3 bg-red-500 rounded-full animate-pulse"
+                              style={{ animationDelay: "0.2s" }}
+                            ></div>
+                            <div
+                              className="w-3 h-3 bg-red-500 rounded-full animate-pulse"
+                              style={{ animationDelay: "0.4s" }}
+                            ></div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            ) : assessmentComplete ? (
+              <Card className="border-0 shadow-2xl bg-white/90 backdrop-blur-sm">
+                <CardContent className="text-center py-16">
+                  <CheckCircle className="h-24 w-24 text-green-500 mx-auto mb-6 animate-pulse" />
+                  <h3 className="text-4xl font-bold text-green-700 mb-4">
+                    Assessment Complete!
+                  </h3>
+                  <p className="text-xl text-gray-600 mb-8">
+                    Patient information has been recorded and they've been added
+                    to the queue
+                  </p>
+                  <Button
+                    onClick={resetAssessment}
+                    size="lg"
+                    className="text-xl py-4 px-8 bg-gradient-to-r from-green-600 to-red-600 hover:from-green-700 hover:to-red-700"
+                  >
+                    Start New Assessment
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : (
+              <>
+                {/* Progress Bar */}
+                <div className="bg-white/80 backdrop-blur-sm rounded-2xl p-6 shadow-lg">
+                  <div className="flex justify-between items-center mb-4">
+                    <span className="text-lg font-semibold text-gray-700">
+                      Question {currentQuestionIndex + 1} of{" "}
+                      {triageQuestions.length}
+                    </span>
+                    <span className="text-lg font-medium text-red-600">
+                      {Math.round(
+                        ((currentQuestionIndex + 1) / triageQuestions.length) *
+                          100
+                      )}
+                      %
+                    </span>
+                  </div>
+                  <div className="w-full bg-gray-200 rounded-full h-3">
+                    <div
+                      className="bg-gradient-to-r from-red-500 to-red-600 h-3 rounded-full transition-all duration-500 ease-out"
+                      style={{
+                        width: `${
+                          ((currentQuestionIndex + 1) /
+                            triageQuestions.length) *
+                          100
+                        }%`,
+                      }}
+                    ></div>
+                  </div>
+                </div>
+
+                {/* Main Question Display */}
+                <Card className="border-0 shadow-2xl bg-white/90 backdrop-blur-sm overflow-hidden">
+                  <CardContent className="p-12">
+                    <div
+                      className={`transition-all duration-300 ${
+                        questionAnimating
+                          ? "opacity-0 transform translate-y-4"
+                          : "opacity-100 transform translate-y-0"
+                      }`}
+                    >
+                      {currentQuestion && (
+                        <div className="text-center space-y-8">
+                          <h2 className="text-4xl md:text-5xl font-bold text-gray-800 leading-tight">
+                            {currentQuestion.question}
+                          </h2>
+
+                          {isSpeaking && (
+                            <div className="flex items-center justify-center gap-4 py-8">
+                              <div className="flex space-x-2">
+                                <div className="w-3 h-3 bg-red-500 rounded-full animate-bounce"></div>
+                                <div
+                                  className="w-3 h-3 bg-red-600 rounded-full animate-bounce"
+                                  style={{ animationDelay: "0.1s" }}
+                                ></div>
+                                <div
+                                  className="w-3 h-3 bg-red-500 rounded-full animate-bounce"
+                                  style={{ animationDelay: "0.2s" }}
+                                ></div>
+                              </div>
+                              <p className="text-2xl text-red-600 font-semibold">
+                                AI is speaking...
+                              </p>
+                            </div>
+                          )}
+
+                          {countdown > 0 && !isSpeaking && (
+                            <div className="space-y-6">
+                              <div className="text-center">
+                                <div className="text-6xl font-bold text-red-600 mb-4">
+                                  {countdown}
+                                </div>
+                                <p className="text-2xl text-gray-600">
+                                  Please speak your answer now
+                                </p>
+                              </div>
+                              <div className="flex justify-center">
+                                <div className="relative">
+                                  <Mic className="h-16 w-16 text-red-500 animate-pulse" />
+                                  <div className="absolute inset-0 h-16 w-16 border-4 border-red-500 rounded-full animate-ping"></div>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {transcript && (
+                            <div className="bg-green-50 border-2 border-green-200 rounded-2xl p-6 mx-auto max-w-2xl">
+                              <p className="text-lg text-green-700 mb-2 font-semibold">
+                                You said:
+                              </p>
+                              <p className="text-xl text-green-900 italic">
+                                "{transcript}"
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Controls */}
+                <div className="flex justify-center space-x-6">
+                  <Button
+                    onClick={resetAssessment}
+                    variant="outline"
+                    size="lg"
+                    className="text-lg py-3 px-6 border-2"
+                  >
+                    <RotateCcw className="h-5 w-5 mr-2" />
+                    Reset Assessment
+                  </Button>
+
+                  <Button
+                    onClick={askCurrentQuestion}
+                    variant="outline"
+                    size="lg"
+                    disabled={isSpeaking}
+                    className="text-lg py-3 px-6 border-2"
+                  >
+                    <Volume2 className="h-5 w-5 mr-2" />
+                    Repeat Question
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* Progress Overview */}
+        {Object.keys(responses).length > 0 && !assessmentComplete && (
+          <Card className="border-0 shadow-lg bg-white/80 backdrop-blur-sm mt-8">
+            <CardHeader>
+              <CardTitle className="text-2xl text-center text-gray-800">
+                Assessment Progress
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-4 md:grid-cols-2">
+                {triageQuestions.map((question, index) => {
+                  const response = responses[question.id];
+                  const isActive = index === currentQuestionIndex;
+                  const isCompleted = !!response;
+
                   return (
-                    <div key={questionId} className="text-sm">
-                      <span className="font-medium">{question?.question}</span>
-                      <p className="text-muted-foreground ml-4">{response}</p>
+                    <div
+                      key={question.id}
+                      className={`p-4 rounded-xl border-2 transition-all duration-300 ${
+                        isActive
+                          ? "bg-red-50 border-red-300 shadow-md transform scale-105"
+                          : isCompleted
+                          ? "bg-green-50 border-green-300"
+                          : "bg-gray-50 border-gray-200"
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 mb-2">
+                        <div
+                          className={`w-6 h-6 rounded-full flex items-center justify-center text-sm font-bold ${
+                            isCompleted
+                              ? "bg-green-500 text-white"
+                              : isActive
+                              ? "bg-red-500 text-white"
+                              : "bg-gray-300 text-gray-600"
+                          }`}
+                        >
+                          {isCompleted ? "✓" : index + 1}
+                        </div>
+                        <p className="font-semibold text-gray-700">
+                          {question.question}
+                        </p>
+                      </div>
+                      {response && (
+                        <p className="text-green-700 ml-9 italic">
+                          "{response}"
+                        </p>
+                      )}
                     </div>
                   );
                 })}
               </div>
-            </div>
-            <Button onClick={resetAssessment} variant="outline">
-              Start New Assessment
-            </Button>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        )}
       </div>
-    );
-  }
-
-  return (
-    <div className="max-w-2xl mx-auto">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center justify-center gap-2 text-2xl">
-            <Volume2 className="w-6 h-6" />
-            Voice Triage Assessment
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          {/* Progress */}
-          <div className="text-center">
-            <div className="text-sm text-muted-foreground mb-2">
-              Question {currentQuestion.id} of {triageQuestions.length}
-            </div>
-            <div className="w-full bg-muted rounded-full h-2">
-              <div
-                className="bg-primary h-2 rounded-full transition-all duration-300"
-                style={{
-                  width: `${
-                    (currentQuestion.id / triageQuestions.length) * 100
-                  }%`,
-                }}
-              />
-            </div>
-          </div>
-
-          {/* Current Question */}
-          <div className="text-center space-y-4">
-            <div className="bg-primary/10 rounded-lg p-6">
-              <h2 className="text-2xl font-bold mb-2">
-                Question {currentQuestion.id}
-              </h2>
-              <p className="text-xl">{currentQuestion.question}</p>
-            </div>
-
-            {/* Voice Status */}
-            <div className="flex items-center justify-center gap-4">
-              {!isConnected && (
-                <div className="flex items-center gap-2 text-yellow-600">
-                  <Volume2 className="w-5 h-5" />
-                  <span>Connecting...</span>
-                </div>
-              )}
-
-              {isConnected && isSpeaking && (
-                <div className="flex items-center gap-2 text-blue-600">
-                  <Volume2 className="w-5 h-5 animate-pulse" />
-                  <span>AI is speaking...</span>
-                </div>
-              )}
-
-              {isConnected && isListening && (
-                <div className="flex items-center gap-2 text-green-600">
-                  <Mic className="w-5 h-5 animate-pulse" />
-                  <span>Recording...</span>
-                </div>
-              )}
-
-              {isConnected && !isSpeaking && !isListening && (
-                <div className="flex items-center gap-2 text-muted-foreground">
-                  <MicOff className="w-5 h-5" />
-                  <span>Ready...</span>
-                </div>
-              )}
-            </div>
-
-            {/* Current Response */}
-            {transcript && (
-              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                <p className="text-sm text-green-800">
-                  <strong>Your response:</strong> {transcript}
-                </p>
-              </div>
-            )}
-
-            {/* Previous Responses */}
-            {Object.keys(responses).length > 0 && (
-              <div className="bg-muted/50 rounded-lg p-4">
-                <h3 className="font-semibold mb-2 text-sm">
-                  Previous responses:
-                </h3>
-                <div className="space-y-1">
-                  {Object.entries(responses).map(([questionId, response]) => {
-                    const question = triageQuestions.find(
-                      (q) => q.id === parseInt(questionId)
-                    );
-                    return (
-                      <div
-                        key={questionId}
-                        className="text-xs text-muted-foreground"
-                      >
-                        <span className="font-medium">
-                          {question?.question}
-                        </span>{" "}
-                        {response}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Controls */}
-          <div className="flex gap-4 justify-center">
-            <Button
-              onClick={isListening ? stopAudioRecording : startAudioRecording}
-              variant={isListening ? "destructive" : "default"}
-              disabled={isSpeaking || !isConnected}
-            >
-              {isListening ? (
-                <>
-                  <Square className="w-4 h-4 mr-2" />
-                  Stop Recording
-                </>
-              ) : (
-                <>
-                  <Mic className="w-4 h-4 mr-2" />
-                  Start Recording
-                </>
-              )}
-            </Button>
-
-            <Button onClick={resetAssessment} variant="outline">
-              Reset Assessment
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
     </div>
   );
 }

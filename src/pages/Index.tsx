@@ -103,7 +103,13 @@ const Index = () => {
   }, [patients]);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-background to-primary/5">
+    <div
+      className={`min-h-screen ${
+        currentView === "triage"
+          ? "bg-gradient-to-br from-red-50/30 via-white to-red-50/30"
+          : "bg-gradient-to-br from-background via-background to-primary/5"
+      }`}
+    >
       {/* Header */}
       <header className="bg-red-100 text-red-900 shadow-2xl">
         <div className="container mx-auto px-4 py-6">
@@ -324,11 +330,11 @@ const Index = () => {
         )}
 
         {currentView === "triage" && (
-          <div className="space-y-6">
+          <div className="space-y-6 p-6">
             <div className="flex items-center justify-between">
               <button
                 onClick={() => setCurrentView("home")}
-                className="flex items-center gap-2 text-muted-foreground hover:text-foreground transition-colors"
+                className="flex items-center gap-2 bg-gray-300 text-white px-4 py-2 rounded-lg hover:bg-gray-400 transition-colors shadow-md"
               >
                 ← Back to Home
               </button>
