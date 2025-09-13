@@ -1,13 +1,14 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { PatientQueue } from "@/components/PatientQueue";
 import { PatientDetails } from "@/components/PatientDetails";
 import { EDDashboard } from "@/components/EDDashboard";
 import { Patient } from "@/types/patient";
-import { mockPatients } from "@/data/mockPatients";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 import {
   Activity,
   Users,
@@ -19,7 +20,7 @@ import {
 } from "lucide-react";
 
 const Index = () => {
-  const [patients, setPatients] = useState<Patient[]>(mockPatients);
+  const [patients, setPatients] = useState<Patient[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [currentView, setCurrentView] = useState<"home" | "nurse" | "triage">(
     "home"
@@ -27,9 +28,100 @@ const Index = () => {
   const [showPasswordPopup, setShowPasswordPopup] = useState(false);
   const [password, setPassword] = useState("");
   const [passwordError, setPasswordError] = useState("");
+  const [loading, setLoading] = useState(true);
 
-  const handlePatientAdd = (newPatient: Patient) => {
-    setPatients([...patients, newPatient]);
+  // Fetch patients from Supabase
+  useEffect(() => {
+    fetchPatients();
+
+    // Set up realtime subscription
+    const channel = supabase
+      .channel('schema-db-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'patients'
+        },
+        () => {
+          fetchPatients();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  const fetchPatients = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('patients')
+        .select('*')
+        .order('triage_level', { ascending: true })
+        .order('arrival', { ascending: true });
+
+      if (error) throw error;
+
+      // Transform database records to Patient type
+      const transformedPatients: Patient[] = (data || []).map(record => ({
+        id: record.id,
+        name: record.name,
+        age: record.age,
+        gender: record.gender as 'Male' | 'Female' | 'Other',
+        arrivalTime: new Date(record.arrival),
+        triageLevel: record.triage_level as 1 | 2 | 3 | 4 | 5,
+        chiefComplaint: record.patient_summary || 'No summary available',
+        vitals: {
+          heartRate: record.heart_rate,
+          bloodPressure: {
+            systolic: 120, // Default values since not in DB
+            diastolic: 80
+          },
+          respiratoryRate: record.respiratory_rate,
+          temperature: 98.6, // Default value
+          oxygenSaturation: 98 // Default value
+        },
+        allergies: [],
+        medications: [],
+        medicalHistory: [],
+        notes: '',
+        aiSummary: record.patient_summary || '',
+        status: 'waiting' as const
+      }));
+
+      setPatients(transformedPatients);
+    } catch (error) {
+      console.error('Error fetching patients:', error);
+      toast.error('Failed to load patients');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handlePatientAdd = async (newPatient: Patient) => {
+    try {
+      const { error } = await supabase.from('patients').insert({
+        name: newPatient.name,
+        age: newPatient.age,
+        gender: newPatient.gender,
+        arrival: newPatient.arrivalTime.toISOString(),
+        patient_summary: newPatient.aiSummary || newPatient.chiefComplaint,
+        triage_level: newPatient.triageLevel,
+        heart_rate: newPatient.vitals.heartRate,
+        respiratory_rate: newPatient.vitals.respiratoryRate
+      });
+
+      if (error) throw error;
+      
+      toast.success('Patient added successfully');
+      fetchPatients(); // Refresh the list
+    } catch (error) {
+      console.error('Error adding patient:', error);
+      toast.error('Failed to add patient');
+    }
   };
 
   const handlePatientSelect = (patient: Patient) => {
@@ -41,11 +133,24 @@ const Index = () => {
     }
   };
 
-  const handlePatientRemove = (patientId: string) => {
-    setPatients(patients.filter((p) => p.id !== patientId));
-    // Clear selection if the removed patient was selected
-    if (selectedPatient?.id === patientId) {
-      setSelectedPatient(null);
+  const handlePatientRemove = async (patientId: string) => {
+    try {
+      const { error } = await supabase
+        .from('patients')
+        .delete()
+        .eq('id', patientId);
+
+      if (error) throw error;
+
+      toast.success('Patient removed from queue');
+      // Clear selection if the removed patient was selected
+      if (selectedPatient?.id === patientId) {
+        setSelectedPatient(null);
+      }
+      fetchPatients(); // Refresh the list
+    } catch (error) {
+      console.error('Error removing patient:', error);
+      toast.error('Failed to remove patient');
     }
   };
 
@@ -198,7 +303,17 @@ const Index = () => {
                 ← Back to Home
               </button>
             </div>
-            {/* Stats Cards */}
+            
+            {loading ? (
+              <div className="flex items-center justify-center min-h-[400px]">
+                <div className="text-center space-y-3">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"></div>
+                  <p className="text-muted-foreground">Loading patients...</p>
+                </div>
+              </div>
+            ) : (
+              <>
+                {/* Stats Cards */}
             <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
               <Card className="bg-gradient-to-br from-status-critical/10 to-status-critical/5 border-status-critical/20 hover:shadow-lg transition-all duration-300">
                 <CardContent className="p-4">
@@ -326,6 +441,8 @@ const Index = () => {
                 )}
               </div>
             </div>
+            </>
+            )}
           </div>
         )}
 

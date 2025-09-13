@@ -14,7 +14,48 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      patients: {
+        Row: {
+          age: number
+          arrival: string
+          created_at: string
+          gender: string
+          heart_rate: number
+          id: string
+          name: string
+          patient_summary: string | null
+          respiratory_rate: number
+          triage_level: number
+          updated_at: string
+        }
+        Insert: {
+          age: number
+          arrival?: string
+          created_at?: string
+          gender: string
+          heart_rate: number
+          id?: string
+          name: string
+          patient_summary?: string | null
+          respiratory_rate: number
+          triage_level: number
+          updated_at?: string
+        }
+        Update: {
+          age?: number
+          arrival?: string
+          created_at?: string
+          gender?: string
+          heart_rate?: number
+          id?: string
+          name?: string
+          patient_summary?: string | null
+          respiratory_rate?: number
+          triage_level?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
