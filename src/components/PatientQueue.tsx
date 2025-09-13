@@ -16,20 +16,25 @@ export function PatientQueue({ patients, onPatientSelect, selectedPatientId }: P
 
   return (
     <div className="space-y-3">
-      <div className="bg-card rounded-lg p-4 border border-border">
-        <h2 className="text-lg font-semibold text-foreground mb-3">Patient Queue</h2>
-        <div className="text-sm text-muted-foreground mb-4">
-          {patients.length} patients waiting
+      <div className="bg-gradient-to-r from-card to-card/80 rounded-lg p-5 border border-border shadow-md">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-xl font-bold text-foreground">Patient Queue</h2>
+          <Badge variant="secondary" className="px-3 py-1">
+            {patients.length} waiting
+          </Badge>
         </div>
+        <p className="text-sm text-muted-foreground">
+          Priority sorted by triage severity
+        </p>
       </div>
 
       <div className="space-y-2">
         {sortedPatients.map((patient) => (
           <Card
             key={patient.id}
-            className={`cursor-pointer transition-all duration-200 hover:shadow-hover ${
-              selectedPatientId === patient.id ? 'ring-2 ring-primary' : ''
-            }`}
+            className={`cursor-pointer transition-all duration-300 hover:shadow-lg hover:scale-[1.02] border-l-4 ${
+              selectedPatientId === patient.id ? 'ring-2 ring-primary shadow-lg bg-primary/5' : 'hover:bg-accent/5'
+            } ${getTriageColor(patient.triageLevel).replace('bg-', 'border-l-')}`}
             onClick={() => onPatientSelect(patient)}
           >
             <CardContent className="p-4">
