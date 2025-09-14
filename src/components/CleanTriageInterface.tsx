@@ -368,6 +368,8 @@ export function CleanTriageInterface({ onPatientAdd }: CleanTriageInterfaceProps
 
   // Handle pain data updates
   const handlePainData = (painLevel: number, confidence: number) => {
+    console.log('💊 handlePainData called with:', { painLevel, confidence });
+
     setPainData(prevData => {
       const newLevels = [...prevData.levels, painLevel];
       const newConfidences = [...prevData.confidences, confidence];
@@ -387,6 +389,13 @@ export function CleanTriageInterface({ onPatientAdd }: CleanTriageInterfaceProps
         averagePain: parseFloat(averagePain.toFixed(2)),
         maxPain
       };
+
+      console.log('💊 Updated pain data:', {
+        totalReadings: updatedData.levels.length,
+        averagePain: updatedData.averagePain,
+        maxPain: updatedData.maxPain,
+        latestLevels: updatedData.levels.slice(-3) // Show last 3 readings
+      });
 
       return updatedData;
     });
@@ -531,23 +540,40 @@ export function CleanTriageInterface({ onPatientAdd }: CleanTriageInterfaceProps
 
       console.log('🎯 Final form data for display:', finalFormData);
 
-      // Notify parent component with updated form data and pain assessment
-      onPatientAdd({
+      // Log current pain data state before sending
+      console.log('💊 Current pain data state before completion:', {
+        levels: painData.levels,
+        confidences: painData.confidences,
+        averagePain: painData.averagePain,
+        maxPain: painData.maxPain,
+        levelCount: painData.levels.length
+      });
+
+      const painAssessment = {
+        average_pain: painData.averagePain,
+        max_pain: painData.maxPain,
+        pain_readings: painData.levels.length,
+        overall_confidence: painData.confidences.length > 0
+          ? painData.confidences.reduce((a, b) => a + b, 0) / painData.confidences.length
+          : 0,
+        // Convert to 1-10 scale for medical vitals
+        medical_pain_level: convertPainScale(painData.averagePain)
+      };
+
+      console.log('💊 Formatted pain assessment for database:', painAssessment);
+
+      const completePatientData = {
         ...finalFormData,
         patient_id: data.patient_id,
         urgency_score: data.urgency_score,
         triage_level: data.triage_level,
-        pain_assessment: {
-          average_pain: painData.averagePain,
-          max_pain: painData.maxPain,
-          pain_readings: painData.levels.length,
-          overall_confidence: painData.confidences.length > 0
-            ? painData.confidences.reduce((a, b) => a + b, 0) / painData.confidences.length
-            : 0,
-          // Convert to 1-10 scale for medical vitals
-          medical_pain_level: convertPainScale(painData.averagePain)
-        }
-      });
+        pain_assessment: painAssessment
+      };
+
+      console.log('🏥 Complete patient data being sent to parent component:', completePatientData);
+
+      // Notify parent component with updated form data and pain assessment
+      onPatientAdd(completePatientData);
 
       await speakText(data.message, false); // Don't continue listening after completion
       toast.success("Assessment complete!");

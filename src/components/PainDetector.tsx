@@ -11,12 +11,20 @@ interface PainResult {
   confidence?: number;
   pspi_score?: number;
   frame_quality?: number;
+  face_detected?: boolean;
+  has_face?: boolean;
+  face_found?: boolean;
+  detection_success?: boolean;
+  pain_score?: number;
+  multimodal_pain_score?: number;
+  level?: number;
+  overall_confidence?: number;
   // API might have different field names, so let's make this flexible
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 const PAIN_SERVER_URL = "http://localhost:8000";
-const CAPTURE_INTERVAL = 500; // Capture every 0.5 seconds for faster updates
+const CAPTURE_INTERVAL = 200; // Capture every 0.2 seconds for higher frequency
 const PAIN_LEVELS = {
   0: { label: "No Pain", color: "bg-green-500", intensity: "text-green-700" },
   1: { label: "Very Mild", color: "bg-green-400", intensity: "text-green-700" },
@@ -38,7 +46,7 @@ export function PainDetector({ isActive, onPainData }: PainDetectorProps) {
   const streamRef = useRef<MediaStream | null>(null);
   const onPainDataRef = useRef<((painLevel: number, confidence: number) => void) | undefined>(onPainData);
 
-  const [painLevel, setPainLevel] = useState<number>(0);
+  const [painLevel, setPainLevel] = useState<number | null>(null);
   const [confidence, setConfidence] = useState<number>(0);
   const [isConnected, setIsConnected] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -140,58 +148,88 @@ export function PainDetector({ isActive, onPainData }: PainDetectorProps) {
       });
 
       if (response.ok) {
-        const result: any = await response.json();
+        const result: PainResult = await response.json();
 
         console.log('🔍 FULL API RESPONSE:', JSON.stringify(result, null, 2));
         console.log('🔍 Available fields:', Object.keys(result));
+
+        // Check for face detection first
+        const possibleFaceFields = ['face_detected', 'has_face', 'face_found', 'detection_success'];
+        let faceDetected = false;
+
+        console.log('🔍 Checking for face detection in fields:', possibleFaceFields);
+        for (const field of possibleFaceFields) {
+          const value = result[field];
+          if (value !== undefined && value !== null) {
+            faceDetected = Boolean(value);
+            console.log(`🎯 Face detection field '${field}':`, faceDetected);
+            break;
+          }
+        }
+
+        // If no explicit face detection field, assume face is detected if we have pain data
+        if (!faceDetected && result.pain_level !== undefined) {
+          faceDetected = true;
+        }
+
+        console.log('👤 Face detected:', faceDetected);
 
         // Try different possible field names from the API based on your logs
         let rawPainValue = null;
         let confidenceNum = 0;
 
-        // Check all possible pain-related fields from your API logs
-        const possiblePainFields = ['pspi_score', 'pain_level', 'pain_score', 'multimodal_pain_score', 'level'];
-        const possibleConfidenceFields = ['confidence', 'overall_confidence'];
+        // Only process pain data if face is detected
+        if (faceDetected) {
+          // Check all possible pain-related fields from your API logs
+          const possiblePainFields = ['pspi_score', 'pain_level', 'pain_score', 'multimodal_pain_score', 'level'];
+          const possibleConfidenceFields = ['confidence', 'overall_confidence'];
 
-        console.log('🔍 Searching for pain value in fields:', possiblePainFields);
-        for (const field of possiblePainFields) {
-          if (result[field] !== undefined && result[field] !== null) {
-            rawPainValue = result[field];
-            console.log(`🎯 Found pain value in field '${field}':`, rawPainValue, `(type: ${typeof rawPainValue})`);
-            break;
+          console.log('🔍 Searching for pain value in fields:', possiblePainFields);
+          for (const field of possiblePainFields) {
+            const value = result[field];
+            if (value !== undefined && value !== null) {
+              rawPainValue = value;
+              console.log(`🎯 Found pain value in field '${field}':`, rawPainValue, `(type: ${typeof rawPainValue})`);
+              break;
+            }
           }
+
+          console.log('🔍 Searching for confidence value in fields:', possibleConfidenceFields);
+          for (const field of possibleConfidenceFields) {
+            const value = result[field];
+            if (value !== undefined && value !== null) {
+              confidenceNum = value as number;
+              console.log(`🎯 Found confidence value in field '${field}':`, confidenceNum, `(type: ${typeof confidenceNum})`);
+              break;
+            }
+          }
+
+          console.log('🔍 Raw extracted values - Pain:', rawPainValue, 'Confidence:', confidenceNum);
         }
 
-        console.log('🔍 Searching for confidence value in fields:', possibleConfidenceFields);
-        for (const field of possibleConfidenceFields) {
-          if (result[field] !== undefined && result[field] !== null) {
-            confidenceNum = result[field];
-            console.log(`🎯 Found confidence value in field '${field}':`, confidenceNum, `(type: ${typeof confidenceNum})`);
-            break;
+        // Process pain value - no conversion, just round to whole number
+        let painLevelNum: number | null = null;
+
+        if (faceDetected && rawPainValue !== null) {
+          if (typeof rawPainValue === 'number') {
+            // Just round to whole number, no conversion
+            painLevelNum = Math.round(rawPainValue);
+            console.log(`🔢 Rounded pain value: ${rawPainValue} → ${painLevelNum}`);
+          } else if (typeof rawPainValue === 'string') {
+            // Handle string cases like "Low", "Moderate" etc
+            const painMapping: { [key: string]: number } = {
+              'No Pain': 0, 'Low': 2, 'Minimal': 2, 'Mild': 4,
+              'Moderate': 6, 'High': 8, 'Severe': 8, 'Critical': 10
+            };
+            painLevelNum = painMapping[rawPainValue] ?? null;
+            console.log(`🔤 String conversion: "${rawPainValue}" = ${painLevelNum}`);
           }
-        }
-
-        console.log('🔍 Raw extracted values - Pain:', rawPainValue, 'Confidence:', confidenceNum);
-
-        // Convert pain value to 0-10 scale
-        let painLevelNum = 0;
-
-        if (typeof rawPainValue === 'number') {
-          // Based on your logs, values are like 0.83, 1.24 which seem to be 0-5 scale
-          // Convert to 0-10 scale by multiplying by 2
-          painLevelNum = Math.min(10, Math.round(rawPainValue * 2));
-          console.log(`🔢 Numeric conversion: ${rawPainValue} * 2 = ${painLevelNum}`);
-        } else if (typeof rawPainValue === 'string') {
-          // Handle string cases like "Low", "Moderate" etc
-          const painMapping: { [key: string]: number } = {
-            'No Pain': 0, 'Low': 2, 'Minimal': 2, 'Mild': 4,
-            'Moderate': 6, 'High': 8, 'Severe': 8, 'Critical': 10
-          };
-          painLevelNum = painMapping[rawPainValue] ?? 0;
-          console.log(`🔤 String conversion: "${rawPainValue}" = ${painLevelNum}`);
+        } else if (!faceDetected) {
+          console.log('👤 No face detected, setting pain level to null');
+          painLevelNum = null;
         } else {
-          console.log('❌ Could not extract pain value, using 0');
-          painLevelNum = 0;
+          console.log('❌ Could not extract pain value, using null');
+          painLevelNum = null;
         }
 
         // Ensure confidence is a valid number
@@ -209,8 +247,10 @@ export function PainDetector({ isActive, onPainData }: PainDetectorProps) {
         setLastUpdate(new Date().toLocaleTimeString());
         setIsConnected(true);
 
-        // Notify parent component
-        onPainDataRef.current?.(painLevelNum, confidenceNum);
+        // Notify parent component only if we have a valid pain level
+        if (painLevelNum !== null) {
+          onPainDataRef.current?.(painLevelNum, confidenceNum);
+        }
 
       } else {
         console.error('❌ Pain analysis failed:', response.status, response.statusText);
@@ -264,11 +304,11 @@ export function PainDetector({ isActive, onPainData }: PainDetectorProps) {
         streamRef.current = null;
       }
     };
-  }, [isActive]);
+  }, [isActive, captureAndAnalyze, initializeCamera]);
 
   if (!isActive) return null;
 
-  const currentPainInfo = PAIN_LEVELS[painLevel as keyof typeof PAIN_LEVELS] || PAIN_LEVELS[0];
+  const currentPainInfo = painLevel !== null ? (PAIN_LEVELS[painLevel as keyof typeof PAIN_LEVELS] || PAIN_LEVELS[0]) : PAIN_LEVELS[0];
 
   return (
     <div className="bg-gray-50 rounded-lg p-4">
@@ -311,22 +351,32 @@ export function PainDetector({ isActive, onPainData }: PainDetectorProps) {
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <span className="text-sm font-medium">Current Pain Level:</span>
-          <span className={`text-sm font-bold ${currentPainInfo.intensity}`}>
-            {painLevel}/10 - {currentPainInfo.label}
-          </span>
+          {painLevel === null ? (
+            <span className="text-sm font-bold text-gray-500">
+              No face detected
+            </span>
+          ) : (
+            <span className={`text-sm font-bold ${currentPainInfo.intensity}`}>
+              {painLevel}/10 - {currentPainInfo.label}
+            </span>
+          )}
         </div>
 
         {/* Pain Level Bar */}
         <div className="w-full bg-gray-200 rounded-full h-3">
-          <div
-            className={`h-3 rounded-full transition-all duration-500 ${currentPainInfo.color}`}
-            style={{ width: `${(painLevel / 10) * 100}%` }}
-          ></div>
+          {painLevel === null ? (
+            <div className="h-3 rounded-full bg-gray-400 transition-all duration-500" style={{ width: '0%' }}></div>
+          ) : (
+            <div
+              className={`h-3 rounded-full transition-all duration-500 ${currentPainInfo.color}`}
+              style={{ width: `${(painLevel / 10) * 100}%` }}
+            ></div>
+          )}
         </div>
 
         {/* Confidence and Last Update */}
         <div className="flex justify-between text-xs text-gray-500">
-          <span>Confidence: {(confidence * 100).toFixed(1)}%</span>
+          <span>Confidence: {painLevel === null ? 'N/A' : (confidence * 100).toFixed(1) + '%'}</span>
           <span>Updated: {lastUpdate}</span>
         </div>
 
