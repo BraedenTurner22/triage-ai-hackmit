@@ -18,6 +18,7 @@ import {
   Stethoscope,
   AlertTriangle
 } from "lucide-react";
+import { PainDetector } from "./PainDetector";
 
 interface CleanTriageInterfaceProps {
   onPatientAdd: (patient: any) => void;
@@ -88,10 +89,31 @@ export function CleanTriageInterface({ onPatientAdd }: CleanTriageInterfaceProps
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [completedFormData, setCompletedFormData] = useState<FormData | null>(null);
 
+  // Pain detection state
+  const [painData, setPainData] = useState<{
+    levels: number[];
+    confidences: number[];
+    averagePain: number;
+    maxPain: number;
+  }>({
+    levels: [],
+    confidences: [],
+    averagePain: 0,
+    maxPain: 0
+  });
+
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const sessionIdRef = useRef<string | null>(null);
   const formDataRef = useRef<FormData>(formData);
+
+  // Convert pain level from 0-5 scale to 1-10 scale for medical compatibility
+  const convertPainScale = (painLevel: number): number => {
+    // Pain is now already on 0-10 scale from PainDetector
+    // Convert 0 to 1 for medical consistency (pain scales typically start at 1)
+    if (painLevel === 0) return 1;
+    return Math.min(10, painLevel);
+  };
 
   // Keep sessionIdRef in sync with sessionId state
   useEffect(() => {
@@ -344,6 +366,32 @@ export function CleanTriageInterface({ onPatientAdd }: CleanTriageInterfaceProps
     setIsListening(false);
   };
 
+  // Handle pain data updates
+  const handlePainData = (painLevel: number, confidence: number) => {
+    setPainData(prevData => {
+      const newLevels = [...prevData.levels, painLevel];
+      const newConfidences = [...prevData.confidences, confidence];
+
+      // Keep only last 60 readings (about 60 seconds for better analysis)
+      const maxReadings = 60;
+      const trimmedLevels = newLevels.slice(-maxReadings);
+      const trimmedConfidences = newConfidences.slice(-maxReadings);
+
+      // Calculate statistics
+      const averagePain = trimmedLevels.reduce((a, b) => a + b, 0) / trimmedLevels.length;
+      const maxPain = Math.max(...trimmedLevels);
+
+      const updatedData = {
+        levels: trimmedLevels,
+        confidences: trimmedConfidences,
+        averagePain: parseFloat(averagePain.toFixed(2)),
+        maxPain
+      };
+
+      return updatedData;
+    });
+  };
+
   const processAudioResponse = async (audioBlob: Blob) => {
     console.log('🔍 Processing audio response...');
     console.log('🔍 Current sessionId state:', sessionId);
@@ -483,12 +531,22 @@ export function CleanTriageInterface({ onPatientAdd }: CleanTriageInterfaceProps
 
       console.log('🎯 Final form data for display:', finalFormData);
 
-      // Notify parent component with updated form data
+      // Notify parent component with updated form data and pain assessment
       onPatientAdd({
         ...finalFormData,
         patient_id: data.patient_id,
         urgency_score: data.urgency_score,
-        triage_level: data.triage_level
+        triage_level: data.triage_level,
+        pain_assessment: {
+          average_pain: painData.averagePain,
+          max_pain: painData.maxPain,
+          pain_readings: painData.levels.length,
+          overall_confidence: painData.confidences.length > 0
+            ? painData.confidences.reduce((a, b) => a + b, 0) / painData.confidences.length
+            : 0,
+          // Convert to 1-10 scale for medical vitals
+          medical_pain_level: convertPainScale(painData.averagePain)
+        }
       });
 
       await speakText(data.message, false); // Don't continue listening after completion
@@ -517,6 +575,12 @@ export function CleanTriageInterface({ onPatientAdd }: CleanTriageInterfaceProps
     setTranscript("");
     setErrorMessage(null);
     setCompletedFormData(null);
+    setPainData({
+      levels: [],
+      confidences: [],
+      averagePain: 0,
+      maxPain: 0
+    });
     stopListening();
   };
 
@@ -747,6 +811,14 @@ export function CleanTriageInterface({ onPatientAdd }: CleanTriageInterfaceProps
                   >
                     Cancel Assessment
                   </Button>
+                </div>
+
+                {/* Pain Detection - Below the controls */}
+                <div className="pt-6 border-t border-gray-200">
+                  <PainDetector
+                    isActive={assessmentStarted && !assessmentComplete}
+                    onPainData={handlePainData}
+                  />
                 </div>
               </CardContent>
             </Card>

@@ -146,14 +146,28 @@ export function PatientDetails({ patient }: PatientDetailsProps) {
         >
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
-              <div>
+              <div className="flex-1">
                 <p className="text-sm text-muted-foreground">Pain Level</p>
-                <p className="text-2xl font-bold">
-                  {patient.vitals.painLevel}/10
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  patient reported
-                </p>
+                <div className="flex items-center gap-4">
+                  <div>
+                    <p className="text-2xl font-bold">
+                      {patient.vitals.painLevel}/10
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      patient reported
+                    </p>
+                  </div>
+                  {patient.painAssessment && (
+                    <div className="text-right">
+                      <p className="text-lg font-semibold text-blue-600">
+                        {patient.painAssessment.medical_pain_level}/10
+                      </p>
+                      <p className="text-xs text-blue-500">
+                        AI detected
+                      </p>
+                    </div>
+                  )}
+                </div>
               </div>
               <Activity
                 className={`w-8 h-8 ${
@@ -165,6 +179,7 @@ export function PatientDetails({ patient }: PatientDetailsProps) {
             </div>
           </CardContent>
         </Card>
+
       </div>
 
       {/* Detailed Information Tabs */}

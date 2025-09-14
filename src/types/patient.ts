@@ -6,6 +6,14 @@ export interface Vitals {
   painLevel: number; // 1-10 scale
 }
 
+export interface PainAssessment {
+  average_pain: number; // 0-10 scale from facial analysis
+  max_pain: number; // 0-10 scale from facial analysis
+  pain_readings: number; // Number of readings collected
+  overall_confidence: number; // 0-1 scale
+  medical_pain_level: number; // 1-10 scale for medical use
+}
+
 export interface Patient {
   id: string;
   name: string;
@@ -15,6 +23,7 @@ export interface Patient {
   triageLevel: TriageLevel;
   chiefComplaint: string;
   vitals: Vitals;
+  painAssessment?: PainAssessment;
   allergies: string[];
   medications: string[];
   medicalHistory: string[];

@@ -10,6 +10,14 @@ class TriageLevel(IntEnum):
     LESS_URGENT = 4
     NON_URGENT = 5
 
+class PainAssessment(BaseModel):
+    """AI-based facial pain assessment data"""
+    average_pain: float = Field(ge=0, le=10, description="Average pain level from facial analysis (0-10 scale)")
+    max_pain: float = Field(ge=0, le=10, description="Maximum pain level detected (0-10 scale)")
+    pain_readings: int = Field(ge=0, description="Number of pain readings collected")
+    overall_confidence: float = Field(ge=0, le=1, description="Overall confidence of pain detection")
+    medical_pain_level: int = Field(ge=1, le=10, description="Medical pain level for clinical use (1-10 scale)")
+
 class Vitals(BaseModel):
     heartRate: int = Field(description="Heart rate in beats per minute")
     respiratoryRate: int = Field(description="Respiratory rate in breaths per minute")
@@ -29,6 +37,7 @@ class Patient(BaseModel):
     triageLevel: TriageLevel
     chiefComplaint: str
     vitals: Vitals
+    painAssessment: Optional[PainAssessment] = None
     videoUrl: Optional[str] = None
     aiSummary: Optional[str] = None
     assignedNurse: Optional[str] = None
@@ -48,6 +57,7 @@ class PatientCreate(BaseModel):
     gender: Literal["Male", "Female", "Other"]
     chiefComplaint: str
     vitals: Vitals
+    painAssessment: Optional[PainAssessment] = None
     triageLevel: Optional[TriageLevel] = TriageLevel.URGENT  # Default to urgent
 
 class PatientUpdate(BaseModel):
@@ -56,6 +66,7 @@ class PatientUpdate(BaseModel):
     gender: Optional[Literal["Male", "Female", "Other"]] = None
     chiefComplaint: Optional[str] = None
     vitals: Optional[Vitals] = None
+    painAssessment: Optional[PainAssessment] = None
     triageLevel: Optional[TriageLevel] = None
     aiSummary: Optional[str] = None
     assignedNurse: Optional[str] = None
