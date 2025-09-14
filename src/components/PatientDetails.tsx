@@ -39,143 +39,147 @@ export function PatientDetails({ patient }: PatientDetailsProps) {
   return (
     <div className="h-full flex flex-col">
       <div className="overflow-y-auto flex-1 p-6 space-y-4">
-      {/* Patient Header Portal */}
-      <div className="bg-red-50 rounded-xl p-6 shadow-inner">
-        <div className="flex items-start justify-between">
-          <div className="flex-1">
-            <h2 className="text-3xl font-bold text-foreground mb-1">
-              {patient.name}
-            </h2>
-            <div className="flex flex-wrap items-center gap-4 mt-3">
-              <div className="flex items-center gap-2 bg-card/60 rounded-lg px-3 py-1.5">
-                <User className="w-4 h-4 text-primary" />
-                <span className="font-medium">{patient.age} years</span>
+        {/* Patient Header Portal */}
+        <div className="bg-red-50 rounded-xl p-6 shadow-inner">
+          <div className="flex items-start justify-between">
+            <div className="flex-1">
+              <h2 className="text-3xl font-bold text-foreground mb-1">
+                {patient.name}
+              </h2>
+              <div className="flex flex-wrap items-center gap-4 mt-3">
+                <div className="flex items-center gap-2 bg-card/60 rounded-lg px-3 py-1.5">
+                  <User className="w-4 h-4 text-primary" />
+                  <span className="font-medium">{patient.age} years</span>
+                </div>
+                <div className="flex items-center gap-2 bg-card/60 rounded-lg px-3 py-1.5">
+                  <div
+                    className={`w-3 h-3 rounded-full ${
+                      patient.gender === "Male" ? "bg-blue-500" : "bg-pink-500"
+                    }`}
+                  />
+                  <span className="font-medium">{patient.gender}</span>
+                </div>
+                <div className="flex items-center gap-2 bg-card/60 rounded-lg px-3 py-1.5">
+                  <Calendar className="w-4 h-4 text-muted-foreground" />
+                  <span>
+                    Arrived {formatDistanceToNow(patient.arrivalTime)} ago
+                  </span>
+                </div>
               </div>
-              <div className="flex items-center gap-2 bg-card/60 rounded-lg px-3 py-1.5">
-                <div
-                  className={`w-3 h-3 rounded-full ${
-                    patient.gender === "Male" ? "bg-blue-500" : "bg-pink-500"
+            </div>
+            <Badge
+              className={`${getTriageColor(
+                patient.triageLevel
+              )} text-white border-0 px-4 py-2 text-lg font-bold shadow-lg hover:${getTriageColor(
+                patient.triageLevel
+              )}`}
+            >
+              {getTriageLabel(patient.triageLevel)}
+            </Badge>
+          </div>
+
+          <div className="mt-4 bg-card/80 rounded-lg p-4 border border-border">
+            <div className="flex items-center gap-2 mb-2">
+              <AlertCircle className="w-5 h-5 text-destructive" />
+              <span className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                Chief Complaint
+              </span>
+            </div>
+            <p className="text-lg font-medium text-foreground">
+              {patient.chiefComplaint}
+            </p>
+          </div>
+        </div>
+
+        {/* Vitals Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <Card
+            className={isVitalCritical("heart") ? "border-status-critical" : ""}
+          >
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">Heart Rate</p>
+                  <p className="text-2xl font-bold">
+                    {patient.vitals.heartRate}
+                  </p>
+                  <p className="text-xs text-muted-foreground">bpm</p>
+                </div>
+                <Heart
+                  className={`w-8 h-8 ${
+                    isVitalCritical("heart")
+                      ? "text-red-500"
+                      : "text-muted-foreground"
                   }`}
                 />
-                <span className="font-medium">{patient.gender}</span>
               </div>
-              <div className="flex items-center gap-2 bg-card/60 rounded-lg px-3 py-1.5">
-                <Calendar className="w-4 h-4 text-muted-foreground" />
-                <span>
-                  Arrived {formatDistanceToNow(patient.arrivalTime)} ago
-                </span>
-              </div>
-            </div>
-          </div>
-          <Badge
-            className={`${getTriageColor(
-              patient.triageLevel
-            )} text-white border-0 px-4 py-2 text-lg font-bold shadow-lg hover:${getTriageColor(
-              patient.triageLevel
-            )}`}
+            </CardContent>
+          </Card>
+
+          <Card
+            className={
+              isVitalCritical("respiratory") ? "border-status-critical" : ""
+            }
           >
-            {getTriageLabel(patient.triageLevel)}
-          </Badge>
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">
+                    Respiratory Rate
+                  </p>
+                  <p className="text-2xl font-bold">
+                    {patient.vitals.respiratoryRate}
+                  </p>
+                  <p className="text-xs text-muted-foreground">breaths/min</p>
+                </div>
+                <Wind
+                  className={`w-8 h-8 ${
+                    isVitalCritical("respiratory")
+                      ? "text-red-500"
+                      : "text-muted-foreground"
+                  }`}
+                />
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card
+            className={isVitalCritical("pain") ? "border-status-critical" : ""}
+          >
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm text-muted-foreground">Pain Level</p>
+                  <p className="text-2xl font-bold">
+                    {patient.vitals.painLevel}/10
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    patient reported
+                  </p>
+                </div>
+                <Activity
+                  className={`w-8 h-8 ${
+                    isVitalCritical("pain")
+                      ? "text-red-500"
+                      : "text-muted-foreground"
+                  }`}
+                />
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
-        <div className="mt-4 bg-card/80 rounded-lg p-4 border border-border">
-          <div className="flex items-center gap-2 mb-2">
-            <AlertCircle className="w-5 h-5 text-destructive" />
-            <span className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
-              Chief Complaint
-            </span>
-          </div>
-          <p className="text-lg font-medium text-foreground">
-            {patient.chiefComplaint}
-          </p>
-        </div>
-      </div>
+        {/* Detailed Information Tabs */}
+        <Tabs defaultValue="overview" className="w-full">
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="overview">Medication and Allergies</TabsTrigger>
+            <TabsTrigger value="history">
+              Symptoms and Video Analysis
+            </TabsTrigger>
+            <TabsTrigger value="ai">Treatment</TabsTrigger>
+          </TabsList>
 
-      {/* Vitals Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <Card
-          className={isVitalCritical("heart") ? "border-status-critical" : ""}
-        >
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Heart Rate</p>
-                <p className="text-2xl font-bold">{patient.vitals.heartRate}</p>
-                <p className="text-xs text-muted-foreground">bpm</p>
-              </div>
-              <Heart
-                className={`w-8 h-8 ${
-                  isVitalCritical("heart")
-                    ? "text-red-500"
-                    : "text-muted-foreground"
-                }`}
-              />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card
-          className={
-            isVitalCritical("respiratory") ? "border-status-critical" : ""
-          }
-        >
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">
-                  Respiratory Rate
-                </p>
-                <p className="text-2xl font-bold">
-                  {patient.vitals.respiratoryRate}
-                </p>
-                <p className="text-xs text-muted-foreground">breaths/min</p>
-              </div>
-              <Wind
-                className={`w-8 h-8 ${
-                  isVitalCritical("respiratory")
-                    ? "text-red-500"
-                    : "text-muted-foreground"
-                }`}
-              />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card
-          className={isVitalCritical("pain") ? "border-status-critical" : ""}
-        >
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm text-muted-foreground">Pain Level</p>
-                <p className="text-2xl font-bold">
-                  {patient.vitals.painLevel}/10
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  patient reported
-                </p>
-              </div>
-              <Activity
-                className={`w-8 h-8 ${
-                  isVitalCritical("pain")
-                    ? "text-red-500"
-                    : "text-muted-foreground"
-                }`}
-              />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Detailed Information Tabs */}
-      <Tabs defaultValue="overview" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="overview">Medication and Allergies</TabsTrigger>
-          <TabsTrigger value="history">Symptoms and Video Analysis</TabsTrigger>
-          <TabsTrigger value="ai">Treatment</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="overview" className="space-y-4">
+          <TabsContent value="overview" className="space-y-4">
             <Card>
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
@@ -238,9 +242,9 @@ export function PatientDetails({ patient }: PatientDetailsProps) {
                 </CardContent>
               </Card>
             )}
-        </TabsContent>
+          </TabsContent>
 
-        <TabsContent value="history" className="space-y-4">
+          <TabsContent value="history" className="space-y-4">
             <Card>
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
@@ -341,11 +345,11 @@ export function PatientDetails({ patient }: PatientDetailsProps) {
                     </p>
                   </div>
                 )}
-            </CardContent>
-          </Card>
-        </TabsContent>
+              </CardContent>
+            </Card>
+          </TabsContent>
 
-        <TabsContent value="ai" className="space-y-4">
+          <TabsContent value="ai" className="space-y-4">
             <Card className="overflow-hidden border-2 border-green-200">
               <CardHeader className="bg-gradient-to-r from-green-500 via-green-600 to-green-700 text-white">
                 <CardTitle className="text-lg flex items-center gap-2">
@@ -408,8 +412,8 @@ export function PatientDetails({ patient }: PatientDetailsProps) {
                 </div>
               </CardContent>
             </Card>
-        </TabsContent>
-      </Tabs>
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   );

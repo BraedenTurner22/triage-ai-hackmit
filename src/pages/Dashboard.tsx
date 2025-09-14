@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { PatientQueue } from "@/components/PatientQueue";
 import { PatientDetails } from "@/components/PatientDetails";
 import { Patient, getTriageLabel } from "@/types/patient";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -14,6 +14,7 @@ import {
   TrendingUp,
   UserCheck,
   PieChart as PieChartIcon,
+  Brain,
 } from "lucide-react";
 import {
   Chart as ChartJS,
@@ -406,13 +407,14 @@ const Dashboard = () => {
                       <PatientDetails patient={selectedPatient} />
                     </div>
                   ) : (
-                    <div className="bg-card rounded-lg border border-border shadow-lg h-full">
-                      <div className="p-6">
-                        <h3 className="text-2xl font-semibold text-card-foreground mb-6 flex items-center gap-2">
+                    <div className="bg-card rounded-lg border border-border shadow-lg h-full flex flex-col">
+                      <div className="p-6 border-b border-border">
+                        <h3 className="text-2xl font-semibold text-card-foreground flex items-center gap-2">
                           <Activity className="w-6 h-6" />
                           Dashboard Overview
                         </h3>
-
+                      </div>
+                      <div className="overflow-y-auto flex-1 p-6">
                         {/* Dashboard Content */}
                         <div className="space-y-6">
                           {/* Charts Row */}
@@ -532,11 +534,49 @@ const Dashboard = () => {
                           </div>
                         </div>
 
-                        <div className="mt-8 text-center">
-                          <p className="text-muted-foreground">
-                            Select a patient from the queue to view their
-                            details, medical history, and manage their care.
-                          </p>
+                        <div className="mt-8">
+                          <Card className="bg-gradient-to-br from-blue-50 to-indigo-100 border-blue-200">
+                            <CardHeader>
+                              <CardTitle className="text-xl flex items-center gap-2">
+                                <Brain className="w-6 h-6 text-blue-600" />
+                                AI Management Plan
+                              </CardTitle>
+                            </CardHeader>
+                            <CardContent>
+                              <div className="bg-white/80 rounded-lg p-4 border border-blue-200">
+                                <p className="text-gray-800 leading-relaxed">
+                                  Based on current patient queue analysis,
+                                  prioritize the{" "}
+                                  {stats.triageDistribution.find(
+                                    (item) => item.level === 1
+                                  )?.value || 0}{" "}
+                                  critical cases immediately. Consider grouping
+                                  similar symptoms for efficient care delivery
+                                  and prepare discharge protocols for{" "}
+                                  {(stats.triageDistribution.find(
+                                    (item) => item.level === 4
+                                  )?.value || 0) +
+                                    (stats.triageDistribution.find(
+                                      (item) => item.level === 5
+                                    )?.value || 0)}{" "}
+                                  low-priority patients. Current average wait
+                                  time of {stats.avgWaitTime} minutes suggests
+                                  implementing fast-track protocols for minor
+                                  cases. Monitor bed capacity at{" "}
+                                  {stats.queuePercentage}% to prevent
+                                  bottlenecks and ensure optimal patient flow
+                                  throughout the shift.
+                                </p>
+                              </div>
+                              <div className="mt-4 flex items-center justify-between text-sm text-blue-600">
+                                <span className="flex items-center gap-1">
+                                  <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                                  AI Analysis Updated
+                                </span>
+                                <span>{new Date().toLocaleTimeString()}</span>
+                              </div>
+                            </CardContent>
+                          </Card>
                         </div>
                       </div>
                     </div>
