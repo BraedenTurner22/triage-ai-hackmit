@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { useLocation } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
@@ -15,6 +16,7 @@ import {
   VideoOff,
 } from "lucide-react";
 import OpenAI from "openai";
+import { VoiceActivityIndicator } from "./VoiceActivityIndicator";
 
 // Declare Speech Recognition types for TypeScript
 declare global {
@@ -47,18 +49,19 @@ interface TriageQuestion {
 }
 
 const triageQuestions: TriageQuestion[] = [
-  { id: 1, question: "What is your name?", type: "text" },
-  { id: 2, question: "What is your age?", type: "number" },
+  { id: 1, question: "1. What is your name?", type: "text" },
+  { id: 2, question: "2. What is your age?", type: "number" },
   {
     id: 3,
-    question: "What is your sex?",
+    question: "3. What is your sex?",
     type: "select",
     options: ["Male", "Female", "Other"],
   },
-  { id: 4, question: "Please describe your symptoms.", type: "text" },
+  { id: 4, question: "4. Please describe your symptoms.", type: "text" },
 ];
 
 export function EDDashboard({ onPatientAdd }: EDDashboardProps) {
+  const location = useLocation();
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [responses, setResponses] = useState<{ [key: number]: string }>({});
   const [isListening, setIsListening] = useState(false);
@@ -78,6 +81,13 @@ export function EDDashboard({ onPatientAdd }: EDDashboardProps) {
   const [videoCountdown, setVideoCountdown] = useState(0);
   const [videoAnimating, setVideoAnimating] = useState(false);
   const [aidRequested, setAidRequested] = useState(false);
+  const [currentAudio, setCurrentAudio] = useState<HTMLAudioElement | null>(
+    null
+  );
+  const [silenceTimer, setSilenceTimer] = useState<NodeJS.Timeout | null>(null);
+  const [lastSpeechTime, setLastSpeechTime] = useState<number>(0);
+  const [hasSpokenYet, setHasSpokenYet] = useState(false);
+  const [lastTranscript, setLastTranscript] = useState("");
 
   const openAIRef = useRef<OpenAI | null>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
@@ -101,6 +111,43 @@ export function EDDashboard({ onPatientAdd }: EDDashboardProps) {
       );
     }
   }, []);
+
+  // Monitor navigation changes and stop speech when leaving triage analysis page
+  useEffect(() => {
+    // Check if we're not on the triage analysis page and speech is active
+    if (location.pathname !== "/triage-analysis" && isSpeaking) {
+      console.log(
+        "Navigation detected: FORCE stopping speech due to page change"
+      );
+
+      // Immediately stop any ongoing audio with multiple methods
+      if (currentAudioRef.current) {
+        currentAudioRef.current.pause();
+        currentAudioRef.current.currentTime = 0; // Reset to beginning
+        currentAudioRef.current.src = ""; // Clear source
+        currentAudioRef.current = null;
+      }
+
+      // Stop browser speech synthesis aggressively
+      if ("speechSynthesis" in window) {
+        speechSynthesis.cancel();
+        speechSynthesis.pause();
+        setTimeout(() => speechSynthesis.cancel(), 0); // Double cancel
+      }
+
+      // Force reset all audio-related state immediately
+      setIsSpeaking(false);
+      setCurrentAudio(null);
+
+      // Clear any existing audio elements in the DOM
+      const audioElements = document.querySelectorAll("audio");
+      audioElements.forEach((audio) => {
+        audio.pause();
+        audio.currentTime = 0;
+        audio.src = "";
+      });
+    }
+  }, [location.pathname, isSpeaking]);
 
   const initializeOpenAI = async (apiKey: string) => {
     if (!apiKey.trim()) return;
@@ -169,15 +216,19 @@ export function EDDashboard({ onPatientAdd }: EDDashboardProps) {
       const audioUrl = URL.createObjectURL(audioBlob);
       const audio = new Audio(audioUrl);
 
-      // Store reference for cleanup
-      currentAudioRef.current = audio;
-
       return new Promise((resolve) => {
         audio.onended = () => {
           setIsSpeaking(false);
           console.log("AI finished speaking");
           URL.revokeObjectURL(audioUrl); // Clean up
           currentAudioRef.current = null; // Clear reference
+          setCurrentAudio(null);
+
+          // Auto-start listening for user response after AI finishes speaking
+          console.log("AI finished speaking - auto-starting voice recognition");
+          setTimeout(() => {
+            startListening();
+          }, 500); // Small delay to ensure clean transition
 
           if (startCountdownAfter) {
             startCountdownTimer();
@@ -193,7 +244,24 @@ export function EDDashboard({ onPatientAdd }: EDDashboardProps) {
           setIsSpeaking(false);
           URL.revokeObjectURL(audioUrl); // Clean up
           currentAudioRef.current = null; // Clear reference
+          setCurrentAudio(null);
           resolve();
+        };
+
+        // Set up the audio reference and state when it starts playing
+        audio.onplay = () => {
+          console.log("Audio started playing, setting up voice indicator");
+          currentAudioRef.current = audio;
+          setCurrentAudio(audio);
+        };
+
+        // Also set up on loadeddata in case play event doesn't fire
+        audio.onloadeddata = () => {
+          console.log("Audio data loaded, preparing for voice indicator setup");
+          if (!currentAudioRef.current) {
+            currentAudioRef.current = audio;
+            setCurrentAudio(audio);
+          }
         };
 
         audio.play().catch((error) => {
@@ -201,6 +269,7 @@ export function EDDashboard({ onPatientAdd }: EDDashboardProps) {
           setIsSpeaking(false);
           URL.revokeObjectURL(audioUrl); // Clean up
           currentAudioRef.current = null; // Clear reference
+          setCurrentAudio(null);
           resolve();
         });
       });
@@ -221,6 +290,15 @@ export function EDDashboard({ onPatientAdd }: EDDashboardProps) {
         return new Promise((resolve) => {
           utterance.onend = () => {
             setIsSpeaking(false);
+
+            // Auto-start listening for user response after fallback speech
+            console.log(
+              "Fallback speech finished - auto-starting voice recognition"
+            );
+            setTimeout(() => {
+              startListening();
+            }, 500); // Small delay to ensure clean transition
+
             if (startCountdownAfter) {
               startCountdownTimer();
             }
@@ -241,7 +319,7 @@ export function EDDashboard({ onPatientAdd }: EDDashboardProps) {
     }
   };
 
-  const startListening = () => {
+  const startListening = async () => {
     if (
       !("webkitSpeechRecognition" in window) &&
       !("SpeechRecognition" in window)
@@ -254,18 +332,52 @@ export function EDDashboard({ onPatientAdd }: EDDashboardProps) {
       return;
     }
 
+    // Request microphone access with noise suppression
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+      console.log("Microphone access granted with noise suppression");
+      // We don't actually use this stream, but requesting it enables better audio processing
+      stream.getTracks().forEach((track) => track.stop()); // Stop immediately after getting permission
+    } catch (error) {
+      console.log("Could not get enhanced microphone access, using basic mode");
+    }
+
     const SpeechRecognition =
       window.SpeechRecognition || window.webkitSpeechRecognition;
     const recognition = new SpeechRecognition();
 
-    recognition.continuous = false;
+    recognition.continuous = true; // Keep listening for continuous speech
     recognition.interimResults = true;
     recognition.lang = "en-US";
 
     recognition.onstart = () => {
       setIsListening(true);
       setTranscript("");
-      console.log("Voice recognition started");
+      setLastTranscript("");
+      setLastSpeechTime(Date.now());
+      setHasSpokenYet(false);
+      console.log("Voice recognition started - listening for user response");
+
+      // Start a shorter fallback timer for cases where no speech is detected at all
+      const fallbackTimer = setTimeout(() => {
+        if (!hasSpokenYet) {
+          console.log("No speech detected for 5 seconds - prompting user");
+          toast({
+            title: "Please Speak",
+            description:
+              "Please speak your answer clearly into the microphone.",
+            variant: "default",
+          });
+        }
+      }, 5000); // 5 seconds to detect initial speech
+
+      setSilenceTimer(fallbackTimer);
     };
 
     recognition.onresult = (event) => {
@@ -281,17 +393,73 @@ export function EDDashboard({ onPatientAdd }: EDDashboardProps) {
         }
       }
 
-      setTranscript(finalTranscript + interimTranscript);
+      const currentTranscript = finalTranscript + interimTranscript;
+      setTranscript(currentTranscript);
 
-      if (finalTranscript) {
-        console.log("Final transcript:", finalTranscript);
-        handleResponse(finalTranscript.trim());
+      // Check if user has spoken meaningful content and if transcript is actually changing
+      const meaningfulContent = currentTranscript.trim().length > 5; // Increased threshold
+      const transcriptChanged =
+        currentTranscript.trim() !== lastTranscript.trim();
+      const isRealSpeech = meaningfulContent && transcriptChanged;
+
+      // Enhanced debugging - log everything we're getting
+      console.log("Speech result:", {
+        transcript: `"${currentTranscript}"`,
+        length: currentTranscript.trim().length,
+        meaningful: meaningfulContent,
+        changed: transcriptChanged,
+        realSpeech: isRealSpeech,
+        hasSpoken: hasSpokenYet,
+      });
+
+      if (isRealSpeech) {
+        setLastTranscript(currentTranscript);
+        // Mark that the user has started speaking
+        if (!hasSpokenYet) {
+          setHasSpokenYet(true);
+          console.log(
+            "✅ User started speaking - will auto-save after 3 seconds of silence"
+          );
+        }
+
+        setLastSpeechTime(Date.now());
+        console.log("🔄 Resetting 3-second timer - user is still talking");
+
+        // Clear any existing silence timer (including the initial 5-second prompt timer)
+        if (silenceTimer) {
+          clearTimeout(silenceTimer);
+          setSilenceTimer(null);
+        }
+
+        // Start 3-second countdown: if user stops talking for 3 seconds, save their answer
+        const silenceCountdown = setTimeout(() => {
+          console.log(
+            "⏰ 3 seconds of silence detected - saving answer:",
+            currentTranscript.trim()
+          );
+          autoStopListening();
+        }, 3000);
+
+        setSilenceTimer(silenceCountdown);
+      } else {
+        // Log when we get non-meaningful content (background noise)
+        if (currentTranscript.trim().length > 0) {
+          console.log(
+            "🔇 Ignoring background noise:",
+            `"${currentTranscript}"`
+          );
+        }
       }
     };
 
     recognition.onerror = (event) => {
       console.error("Speech recognition error:", event.error);
       setIsListening(false);
+      // Clear silence timer on error
+      if (silenceTimer) {
+        clearTimeout(silenceTimer);
+        setSilenceTimer(null);
+      }
       toast({
         title: "Speech Recognition Error",
         description: `Error: ${event.error}`,
@@ -302,10 +470,55 @@ export function EDDashboard({ onPatientAdd }: EDDashboardProps) {
     recognition.onend = () => {
       setIsListening(false);
       console.log("Voice recognition ended");
+
+      // Clear silence timer when recognition ends
+      if (silenceTimer) {
+        clearTimeout(silenceTimer);
+        setSilenceTimer(null);
+      }
+
+      // If we have a meaningful transcript when recognition ends, save it
+      if (transcript.trim().length > 2) {
+        console.log(
+          "Recognition ended with meaningful transcript - saving response"
+        );
+        handleResponse(transcript.trim());
+      } else if (hasSpokenYet && transcript.trim().length <= 2) {
+        // User was speaking but recognition cut off - restart automatically
+        console.log("Recognition ended during speech - restarting...");
+        setTimeout(() => {
+          if (!isSpeaking) {
+            // Only restart if AI isn't speaking
+            startListening();
+          }
+        }, 1000);
+      }
     };
 
     recognitionRef.current = recognition;
     recognition.start();
+  };
+
+  const autoStopListening = () => {
+    console.log("Auto-stopping listening due to silence");
+
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+    }
+
+    setIsListening(false);
+
+    // Clear silence timer
+    if (silenceTimer) {
+      clearTimeout(silenceTimer);
+      setSilenceTimer(null);
+    }
+
+    // Save the current transcript if there is one
+    if (transcript.trim()) {
+      console.log("Saving response due to silence:", transcript.trim());
+      handleResponse(transcript.trim());
+    }
   };
 
   const stopListening = () => {
@@ -313,6 +526,12 @@ export function EDDashboard({ onPatientAdd }: EDDashboardProps) {
       recognitionRef.current.stop();
     }
     setIsListening(false);
+
+    // Clear silence timer
+    if (silenceTimer) {
+      clearTimeout(silenceTimer);
+      setSilenceTimer(null);
+    }
   };
 
   const startCountdownTimer = () => {
@@ -509,7 +728,7 @@ export function EDDashboard({ onPatientAdd }: EDDashboardProps) {
 
     // Start with first question
     const welcomeMessage = `Hello! I'm your AI triage nurse. I'll ask you a few questions to help assess your condition. Let's begin. ${triageQuestions[0].question}`;
-    await speakText(welcomeMessage, true); // Start countdown after welcome message
+    await speakText(welcomeMessage, false); // No countdown needed
   };
 
   const resetAssessment = () => {
@@ -567,7 +786,7 @@ export function EDDashboard({ onPatientAdd }: EDDashboardProps) {
       clearCountdownTimer();
 
       const question = triageQuestions[currentQuestionIndex];
-      await speakText(question.question, true); // Start countdown after repeating question
+      await speakText(question.question, false); // No countdown after repeating question
     }
   };
 
@@ -708,24 +927,10 @@ export function EDDashboard({ onPatientAdd }: EDDashboardProps) {
                         </div>
                       </div>
 
-                      {isSpeaking && (
-                        <div className="flex items-center justify-center gap-4 py-8">
-                          <div className="flex space-x-2">
-                            <div className="w-3 h-3 bg-red-500 rounded-full animate-bounce"></div>
-                            <div
-                              className="w-3 h-3 bg-red-600 rounded-full animate-bounce"
-                              style={{ animationDelay: "0.1s" }}
-                            ></div>
-                            <div
-                              className="w-3 h-3 bg-red-500 rounded-full animate-bounce"
-                              style={{ animationDelay: "0.2s" }}
-                            ></div>
-                          </div>
-                          <p className="text-2xl text-red-600 font-semibold">
-                            AI is speaking...
-                          </p>
-                        </div>
-                      )}
+                      <VoiceActivityIndicator
+                        audioElement={currentAudio}
+                        isActive={isSpeaking}
+                      />
 
                       {videoCountdown > 0 && !isSpeaking && !isRecording && (
                         <div className="space-y-6">
@@ -794,24 +999,10 @@ export function EDDashboard({ onPatientAdd }: EDDashboardProps) {
                         </div>
                       </div>
 
-                      {isSpeaking && (
-                        <div className="flex items-center justify-center gap-4 py-8">
-                          <div className="flex space-x-2">
-                            <div className="w-3 h-3 bg-red-500 rounded-full animate-bounce"></div>
-                            <div
-                              className="w-3 h-3 bg-red-600 rounded-full animate-bounce"
-                              style={{ animationDelay: "0.1s" }}
-                            ></div>
-                            <div
-                              className="w-3 h-3 bg-red-500 rounded-full animate-bounce"
-                              style={{ animationDelay: "0.2s" }}
-                            ></div>
-                          </div>
-                          <p className="text-2xl text-red-600 font-semibold">
-                            AI is speaking...
-                          </p>
-                        </div>
-                      )}
+                      <VoiceActivityIndicator
+                        audioElement={currentAudio}
+                        isActive={isSpeaking}
+                      />
 
                       {videoCountdown > 0 && !isSpeaking && !isRecording && (
                         <div className="space-y-6">
@@ -921,50 +1112,34 @@ export function EDDashboard({ onPatientAdd }: EDDashboardProps) {
                             {currentQuestion.question}
                           </h2>
 
-                          {isSpeaking && (
-                            <div className="flex items-center justify-center gap-4 py-8">
-                              <div className="flex space-x-2">
-                                <div className="w-3 h-3 bg-red-500 rounded-full animate-bounce"></div>
-                                <div
-                                  className="w-3 h-3 bg-red-600 rounded-full animate-bounce"
-                                  style={{ animationDelay: "0.1s" }}
-                                ></div>
-                                <div
-                                  className="w-3 h-3 bg-red-500 rounded-full animate-bounce"
-                                  style={{ animationDelay: "0.2s" }}
-                                ></div>
-                              </div>
-                              <p className="text-2xl text-red-600 font-semibold">
-                                AI is speaking...
-                              </p>
-                            </div>
+                          <VoiceActivityIndicator
+                            audioElement={currentAudio}
+                            isActive={isSpeaking}
+                          />
+
+                          {!isSpeaking && !isListening && (
+                            <VoiceActivityIndicator
+                              audioElement={null}
+                              isActive={true}
+                              microphoneStream={null}
+                              isListening={false}
+                              customMessage="Your turn to speak"
+                            />
                           )}
 
-                          {countdown > 0 && !isSpeaking && (
-                            <div className="space-y-6">
-                              <div className="text-center">
-                                <div className="text-6xl font-bold text-red-600 mb-4">
-                                  {countdown}
-                                </div>
-                                <p className="text-2xl text-gray-600">
-                                  Please speak your answer now
-                                </p>
-                              </div>
-                              <div className="flex justify-center">
-                                <div className="relative">
-                                  <Mic className="h-16 w-16 text-red-500 animate-pulse" />
-                                  <div className="absolute inset-0 h-16 w-16 border-4 border-red-500 rounded-full animate-ping"></div>
-                                </div>
-                              </div>
-                            </div>
+                          {isListening && !isSpeaking && (
+                            <VoiceActivityIndicator
+                              audioElement={null}
+                              isActive={true}
+                              microphoneStream={null}
+                              isListening={true}
+                              customMessage="Listening..."
+                            />
                           )}
 
                           {transcript && (
-                            <div className="bg-green-50 border-2 border-green-200 rounded-2xl p-6 mx-auto max-w-2xl">
-                              <p className="text-lg text-green-700 mb-2 font-semibold">
-                                You said:
-                              </p>
-                              <p className="text-xl text-green-900 italic">
+                            <div className="mx-auto max-w-2xl">
+                              <p className="text-xl text-gray-700 italic text-center">
                                 "{transcript}"
                               </p>
                             </div>

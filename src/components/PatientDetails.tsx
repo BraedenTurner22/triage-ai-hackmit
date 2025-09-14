@@ -48,7 +48,7 @@ export function PatientDetails({ patient }: PatientDetailsProps) {
   return (
     <div className="space-y-4 p-6">
       {/* Patient Header Portal */}
-      <div className="bg-gradient-to-r from-primary/10 via-primary/5 to-transparent rounded-xl p-6 shadow-inner">
+      <div className="bg-red-50 rounded-xl p-6 shadow-inner">
         <div className="flex items-start justify-between">
           <div className="flex-1">
             <h2 className="text-3xl font-bold text-foreground mb-1">
@@ -78,7 +78,9 @@ export function PatientDetails({ patient }: PatientDetailsProps) {
           <Badge
             className={`${getTriageColor(
               patient.triageLevel
-            )} text-white border-0 px-4 py-2 text-lg font-bold shadow-lg`}
+            )} text-white border-0 px-4 py-2 text-lg font-bold shadow-lg hover:${getTriageColor(
+              patient.triageLevel
+            )}`}
           >
             {getTriageLabel(patient.triageLevel)}
           </Badge>
