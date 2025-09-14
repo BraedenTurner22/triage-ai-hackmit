@@ -1,8 +1,10 @@
 import { useState, useMemo, useEffect } from "react";
 import { PatientQueue } from "@/components/PatientQueue";
 import { PatientDetails } from "@/components/PatientDetails";
+import { TypingText } from "@/components/TypingText";
 import { Patient, getTriageLabel } from "@/types/patient";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
@@ -14,6 +16,9 @@ import {
   TrendingUp,
   UserCheck,
   PieChart as PieChartIcon,
+  Sparkles,
+  RefreshCw,
+  Loader2,
 } from "lucide-react";
 import {
   Chart as ChartJS,
@@ -39,11 +44,19 @@ ChartJS.register(
   BarElement
 );
 
+interface AISummary {
+  summary: string;
+  cached: boolean;
+  timestamp: string;
+}
+
 const Dashboard = () => {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [queueSummary, setQueueSummary] = useState<string>("");
+  const [loadingQueueSummary, setLoadingQueueSummary] = useState(false);
 
   // Triage level colors matching patient queue (from CSS variables)
   const triageColors = {
@@ -99,9 +112,33 @@ const Dashboard = () => {
 
       console.log(`📋 Found ${data?.length || 0} patients in database`);
 
+      // Hardcoded medications and allergies for demo
+      const medicationOptions = [
+        "Lisinopril 10mg", "Metformin 500mg", "Atorvastatin 20mg", "Levothyroxine 50mcg",
+        "Amlodipine 5mg", "Omeprazole 20mg", "Metoprolol 25mg", "Losartan 50mg",
+        "Hydrochlorothiazide 25mg", "Simvastatin 40mg", "Albuterol Inhaler",
+        "Gabapentin 300mg", "Tramadol 50mg", "Ibuprofen 600mg", "Acetaminophen 500mg"
+      ];
+
+      const allergyOptions = [
+        "Penicillin", "Peanuts", "Shellfish", "Latex", "Aspirin", "Sulfa drugs",
+        "Tree nuts", "Eggs", "Milk", "Codeine", "Iodine", "Morphine", "Bees/Wasps"
+      ];
+
+      // Function to get random items from array
+      const getRandomItems = (array: string[], count: number): string[] => {
+        const shuffled = [...array].sort(() => 0.5 - Math.random());
+        return shuffled.slice(0, count);
+      };
+
       // Transform database records to Patient type
       const transformedPatients: Patient[] = (data || []).map((record) => {
         console.log("🔄 Transforming patient record:", record);
+
+        // Generate random medications and allergies (0-4 each)
+        const randomMedCount = Math.floor(Math.random() * 5); // 0-4
+        const randomAllergyCount = Math.floor(Math.random() * 4); // 0-3
+
         return {
           id: record.id,
           name: record.name,
@@ -115,8 +152,8 @@ const Dashboard = () => {
             respiratoryRate: record.respiratory_rate,
             painLevel: record.pain_level || 5, // Default to 5 if not set
           },
-          allergies: [],
-          medications: [],
+          allergies: getRandomItems(allergyOptions, randomAllergyCount),
+          medications: getRandomItems(medicationOptions, randomMedCount),
           medicalHistory: [],
           notes: "",
           aiSummary: record.patient_summary || "",
@@ -166,6 +203,7 @@ const Dashboard = () => {
     }
   };
 
+
   const stats = useMemo(() => {
     const waitingPatients = patients.filter((p) => p.status === "waiting");
     const totalWaiting = waitingPatients.length;
@@ -213,6 +251,57 @@ const Dashboard = () => {
       waitTimeData,
     };
   }, [patients]);
+
+  const fetchQueueManagementSummary = async (forceRefresh = false) => {
+    setLoadingQueueSummary(true);
+
+    try {
+      const queueData = {
+        patients: patients.map(p => ({
+          name: p.name,
+          triage_level: p.triageLevel,
+          pain_level: p.vitals.painLevel,
+          heart_rate: p.vitals.heartRate,
+          respiratory_rate: p.vitals.respiratoryRate,
+        })),
+        total_patients: stats.totalWaiting,
+        queue_percentage: stats.queuePercentage,
+        avg_wait_time: stats.avgWaitTime,
+      };
+
+      const refreshParam = forceRefresh ? "?refresh=true" : "";
+
+      const response = await fetch(
+        `http://localhost:8001/api/v1/ai-summaries/queue-management${refreshParam}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(queueData),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error("Failed to fetch queue management summary");
+      }
+
+      const data: AISummary = await response.json();
+      setQueueSummary(data.summary);
+    } catch (error) {
+      console.error("Error fetching queue management summary:", error);
+      setQueueSummary("Unable to generate queue management recommendations at this time. Please try again later.");
+    } finally {
+      setLoadingQueueSummary(false);
+    }
+  };
+
+  // Load queue summary when patients change
+  useEffect(() => {
+    if (patients.length > 0 && !loading) {
+      fetchQueueManagementSummary();
+    }
+  }, [patients.length, loading]);
 
   // Chart.js configuration (after stats is defined)
   const pieChartData = {
@@ -406,13 +495,16 @@ const Dashboard = () => {
                       <PatientDetails patient={selectedPatient} />
                     </div>
                   ) : (
-                    <div className="bg-card rounded-lg border border-border shadow-lg h-full">
-                      <div className="p-6">
-                        <h3 className="text-2xl font-semibold text-card-foreground mb-6 flex items-center gap-2">
+                    <div className="bg-card rounded-lg border border-border shadow-lg h-full flex flex-col">
+                      <div className="p-4 border-b border-border">
+                        <h3 className="text-2xl font-semibold text-card-foreground flex items-center gap-2">
                           <Activity className="w-6 h-6" />
                           Dashboard Overview
                         </h3>
+                      </div>
 
+                      {/* Scrollable Dashboard Content */}
+                      <div className="overflow-y-auto flex-1 p-6">
                         {/* Dashboard Content */}
                         <div className="space-y-6">
                           {/* Charts Row */}
@@ -532,12 +624,68 @@ const Dashboard = () => {
                           </div>
                         </div>
 
-                        <div className="mt-8 text-center">
-                          <p className="text-muted-foreground">
-                            Select a patient from the queue to view their
-                            details, medical history, and manage their care.
-                          </p>
-                        </div>
+                        {/* AI Queue Management Summary */}
+                        <Card className="mt-8 overflow-hidden border-2 border-purple-200">
+                          <CardHeader className="bg-gradient-to-r from-purple-500 via-purple-600 to-purple-700 text-white">
+                            <CardTitle className="text-lg flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <Sparkles className="w-5 h-5" />
+                                AI Queue Management Recommendations
+                              </div>
+                              <Button
+                                onClick={() => fetchQueueManagementSummary(true)}
+                                disabled={loadingQueueSummary}
+                                size="sm"
+                                variant="secondary"
+                                className="bg-white/20 hover:bg-white/30 text-white border-white/20"
+                              >
+                                {loadingQueueSummary ? (
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : (
+                                  <RefreshCw className="w-4 h-4" />
+                                )}
+                              </Button>
+                            </CardTitle>
+                          </CardHeader>
+                          <CardContent className="p-6">
+                            {loadingQueueSummary ? (
+                              <div className="flex items-center justify-center py-8">
+                                <div className="text-center space-y-3">
+                                  <Loader2 className="w-8 h-8 text-purple-600 mx-auto animate-spin" />
+                                  <p className="text-purple-600 font-medium">Generating queue management recommendations...</p>
+                                  <p className="text-sm text-muted-foreground">
+                                    Analyzing patient queue and staffing needs
+                                  </p>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="space-y-4">
+                                <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-xl p-5 border border-purple-200">
+                                  <div className="flex items-center gap-2 mb-3">
+                                    <div className="w-2 h-2 bg-orange-500 rounded-full animate-pulse" />
+                                    <p className="text-sm font-semibold text-purple-900 uppercase tracking-wide">
+                                      AI Queue Management Strategy
+                                    </p>
+                                  </div>
+                                  <div className="prose prose-sm text-purple-900 leading-relaxed">
+                                    {queueSummary ? (
+                                      <TypingText
+                                        text={queueSummary}
+                                        speed={25}
+                                        startDelay={300}
+                                        className="text-purple-900 leading-relaxed"
+                                      />
+                                    ) : (
+                                      <p className="text-center text-muted-foreground">
+                                        Select a patient from the queue to view their details, medical history, and manage their care.
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </CardContent>
+                        </Card>
                       </div>
                     </div>
                   )}

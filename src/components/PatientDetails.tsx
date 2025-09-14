@@ -1,7 +1,10 @@
+import { useState, useEffect } from "react";
 import { Patient, getTriageLabel, getTriageColor } from "@/types/patient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
+import { TypingText } from "@/components/TypingText";
 import {
   Heart,
   Wind,
@@ -10,16 +13,30 @@ import {
   Calendar,
   AlertCircle,
   Pill,
-  History,
-  Brain,
+  RefreshCw,
+  Loader2,
+  Sparkles,
 } from "lucide-react";
-import { formatDistanceToNow, format } from "date-fns";
+import { formatDistanceToNow } from "date-fns";
 
 interface PatientDetailsProps {
   patient: Patient;
 }
 
+interface AISummary {
+  summary: string;
+  cached: boolean;
+  timestamp: string;
+}
+
 export function PatientDetails({ patient }: PatientDetailsProps) {
+  const [symptomsSummary, setSymptomsSummary] = useState<string>("");
+  const [treatmentSummary, setTreatmentSummary] = useState<string>("");
+  const [loadingSummary, setLoadingSummary] = useState<{
+    symptoms: boolean;
+    treatment: boolean;
+  }>({ symptoms: false, treatment: false });
+
   const isVitalCritical = (type: "heart" | "respiratory" | "pain"): boolean => {
     switch (type) {
       case "heart":
@@ -35,6 +52,71 @@ export function PatientDetails({ patient }: PatientDetailsProps) {
         return false;
     }
   };
+
+  const fetchAISummary = async (type: "symptoms" | "treatment", forceRefresh = false) => {
+    setLoadingSummary(prev => ({ ...prev, [type]: true }));
+
+    try {
+      const patientData = {
+        patient_id: patient.id,
+        name: patient.name,
+        age: patient.age,
+        chief_complaint: patient.chiefComplaint,
+        heart_rate: patient.vitals.heartRate,
+        respiratory_rate: patient.vitals.respiratoryRate,
+        pain_level: patient.vitals.painLevel,
+        triage_level: patient.triageLevel,
+        medical_history: patient.medicalHistory || [],
+        medications: patient.medications || [],
+        allergies: patient.allergies || [],
+      };
+
+      const endpoint = type === "symptoms" ? "symptoms" : "treatment";
+      const refreshParam = forceRefresh ? "?refresh=true" : "";
+
+      const response = await fetch(
+        `http://localhost:8001/api/v1/ai-summaries/${endpoint}/${patient.id}${refreshParam}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(patientData),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Failed to fetch ${type} summary`);
+      }
+
+      const data: AISummary = await response.json();
+
+      if (type === "symptoms") {
+        setSymptomsSummary(data.summary);
+      } else {
+        setTreatmentSummary(data.summary);
+      }
+    } catch (error) {
+      console.error(`Error fetching ${type} summary:`, error);
+      const fallbackMessage = `Unable to generate AI ${type} summary at this time. Please try again later.`;
+
+      if (type === "symptoms") {
+        setSymptomsSummary(fallbackMessage);
+      } else {
+        setTreatmentSummary(fallbackMessage);
+      }
+    } finally {
+      setLoadingSummary(prev => ({ ...prev, [type]: false }));
+    }
+  };
+
+  // Load AI summaries when patient changes
+  useEffect(() => {
+    if (patient?.id) {
+      fetchAISummary("symptoms");
+      fetchAISummary("treatment");
+    }
+  }, [patient?.id]);
 
   return (
     <div className="h-full flex flex-col">
@@ -186,7 +268,7 @@ export function PatientDetails({ patient }: PatientDetailsProps) {
       <Tabs defaultValue="overview" className="w-full">
         <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="overview">Medication and Allergies</TabsTrigger>
-          <TabsTrigger value="history">Symptoms and Video Analysis</TabsTrigger>
+          <TabsTrigger value="history">Symptoms</TabsTrigger>
           <TabsTrigger value="ai">Treatment</TabsTrigger>
         </TabsList>
 
@@ -256,171 +338,127 @@ export function PatientDetails({ patient }: PatientDetailsProps) {
         </TabsContent>
 
         <TabsContent value="history" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <AlertCircle className="w-4 h-4" />
-                  Current Symptoms
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="bg-gradient-to-br from-red-50 to-red-100 rounded-lg p-4 border border-red-200">
-                  <p className="text-sm font-medium text-red-900 mb-2">
-                    Chief Complaint:
-                  </p>
-                  <p className="text-red-800">{patient.chiefComplaint}</p>
-                </div>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-base flex items-center gap-2">
-                  <History className="w-4 h-4" />
-                  Medical History
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                {patient.medicalHistory.length > 0 ? (
-                  <ul className="space-y-2">
-                    {patient.medicalHistory.map((item, index) => (
-                      <li key={index} className="flex items-start gap-2">
-                        <span className="text-muted-foreground">•</span>
-                        <span className="text-sm">{item}</span>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <p className="text-muted-foreground text-sm">
-                    No significant medical history
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-
-            <Card className="overflow-hidden border-2 border-primary/20">
-              <CardHeader className="bg-gradient-to-r from-primary via-primary/80 to-primary/60 text-white">
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Brain className="w-5 h-5" />
-                  Video Analysis
+            {/* AI Symptoms Summary - Only Content */}
+            <Card className="overflow-hidden border-2 border-blue-200">
+              <CardHeader className="bg-gradient-to-r from-blue-500 via-blue-600 to-blue-700 text-white">
+                <CardTitle className="text-lg flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-5 h-5" />
+                    AI Symptoms Analysis
+                  </div>
+                  <Button
+                    onClick={() => fetchAISummary("symptoms", true)}
+                    disabled={loadingSummary.symptoms}
+                    size="sm"
+                    variant="secondary"
+                    className="bg-white/20 hover:bg-white/30 text-white border-white/20"
+                  >
+                    {loadingSummary.symptoms ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="w-4 h-4" />
+                    )}
+                  </Button>
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-6">
-                {patient.aiSummary ? (
-                  <div className="space-y-4">
-                    <div className="bg-gradient-to-br from-primary/10 to-primary/5 rounded-xl p-5 border border-primary/20">
-                      <div className="flex items-center gap-2 mb-3">
-                        <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                        <p className="text-sm font-semibold text-primary uppercase tracking-wide">
-                          AI Assessment Summary
-                        </p>
-                      </div>
-                      <p className="text-foreground leading-relaxed">
-                        {patient.aiSummary}
+                {loadingSummary.symptoms ? (
+                  <div className="flex items-center justify-center py-8">
+                    <div className="text-center space-y-3">
+                      <Loader2 className="w-8 h-8 text-blue-600 mx-auto animate-spin" />
+                      <p className="text-blue-600 font-medium">Generating AI analysis...</p>
+                      <p className="text-sm text-muted-foreground">
+                        Analyzing patient symptoms and vital signs
                       </p>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="bg-muted/50 rounded-lg p-3">
-                        <p className="text-xs font-medium text-muted-foreground mb-1">
-                          Confidence Level
-                        </p>
-                        <div className="flex items-center gap-2">
-                          <div className="flex-1 bg-muted rounded-full h-2">
-                            <div
-                              className="h-full bg-gradient-to-r from-primary to-green-500 rounded-full"
-                              style={{ width: "85%" }}
-                            />
-                          </div>
-                          <span className="text-sm font-bold">85%</span>
-                        </div>
-                      </div>
-                      <div className="bg-muted/50 rounded-lg p-3">
-                        <p className="text-xs font-medium text-muted-foreground mb-1">
-                          Analysis Time
-                        </p>
-                        <p className="text-sm font-semibold">
-                          {format(new Date(), "HH:mm:ss")}
-                        </p>
-                      </div>
                     </div>
                   </div>
                 ) : (
-                  <div className="text-center py-8">
-                    <Brain className="w-12 h-12 text-muted-foreground/30 mx-auto mb-3 animate-pulse" />
-                    <p className="text-muted-foreground">
-                      AI analysis in progress...
-                    </p>
-                    <p className="text-sm text-muted-foreground/70 mt-1">
-                      Processing patient data
-                    </p>
+                  <div className="space-y-4">
+                    <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-xl p-5 border border-blue-200">
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                        <p className="text-sm font-semibold text-blue-900 uppercase tracking-wide">
+                          AI Clinical Assessment
+                        </p>
+                      </div>
+                      {symptomsSummary ? (
+                        <TypingText
+                          text={symptomsSummary}
+                          speed={25}
+                          startDelay={300}
+                          className="text-blue-900 leading-relaxed text-sm"
+                        />
+                      ) : (
+                        <p className="text-blue-900 leading-relaxed text-sm">
+                          No AI analysis available
+                        </p>
+                      )}
+                    </div>
                   </div>
                 )}
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
         </TabsContent>
 
         <TabsContent value="ai" className="space-y-4">
+            {/* AI Treatment Summary */}
             <Card className="overflow-hidden border-2 border-green-200">
               <CardHeader className="bg-gradient-to-r from-green-500 via-green-600 to-green-700 text-white">
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Pill className="w-5 h-5" />
-                  Treatment Plan & Recommendations
+                <CardTitle className="text-lg flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-5 h-5" />
+                    AI Treatment Recommendations
+                  </div>
+                  <Button
+                    onClick={() => fetchAISummary("treatment", true)}
+                    disabled={loadingSummary.treatment}
+                    size="sm"
+                    variant="secondary"
+                    className="bg-white/20 hover:bg-white/30 text-white border-white/20"
+                  >
+                    {loadingSummary.treatment ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="w-4 h-4" />
+                    )}
+                  </Button>
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-6">
-                <div className="space-y-4">
-                  <Card className="border-green-200">
-                    <CardHeader>
-                      <CardTitle className="text-base flex items-center gap-2">
-                        <Activity className="w-4 h-4 text-green-600" />
-                        Recommended Immediate Actions
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-lg p-4 border border-green-200">
-                        <p className="text-sm text-green-800">
-                          Based on patient presentation and AI analysis,
-                          immediate treatment recommendations will appear here.
+                {loadingSummary.treatment ? (
+                  <div className="flex items-center justify-center py-8">
+                    <div className="text-center space-y-3">
+                      <Loader2 className="w-8 h-8 text-green-600 mx-auto animate-spin" />
+                      <p className="text-green-600 font-medium">Generating treatment recommendations...</p>
+                      <p className="text-sm text-muted-foreground">
+                        Analyzing optimal treatment options
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div className="bg-gradient-to-br from-green-50 to-green-100 rounded-xl p-5 border border-green-200">
+                      <div className="flex items-center gap-2 mb-3">
+                        <div className="w-2 h-2 bg-blue-500 rounded-full animate-pulse" />
+                        <p className="text-sm font-semibold text-green-900 uppercase tracking-wide">
+                          AI Treatment Plan
                         </p>
                       </div>
-                    </CardContent>
-                  </Card>
-
-                  <Card className="border-blue-200">
-                    <CardHeader>
-                      <CardTitle className="text-base flex items-center gap-2">
-                        <Pill className="w-4 h-4 text-blue-600" />
-                        Prescribed Medications
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="bg-gradient-to-br from-blue-50 to-blue-100 rounded-lg p-4 border border-blue-200">
-                        <p className="text-sm text-blue-800">
-                          Prescribed medications and dosages will be recorded
-                          here as treatment progresses.
+                      {treatmentSummary ? (
+                        <TypingText
+                          text={treatmentSummary}
+                          speed={25}
+                          startDelay={300}
+                          className="text-green-900 leading-relaxed text-sm"
+                        />
+                      ) : (
+                        <p className="text-green-900 leading-relaxed text-sm">
+                          No treatment recommendations available
                         </p>
-                      </div>
-                    </CardContent>
-                  </Card>
-
-                  <Card className="border-purple-200">
-                    <CardHeader>
-                      <CardTitle className="text-base flex items-center gap-2">
-                        <Calendar className="w-4 h-4 text-purple-600" />
-                        Follow-up Care
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="bg-gradient-to-br from-purple-50 to-purple-100 rounded-lg p-4 border border-purple-200">
-                        <p className="text-sm text-purple-800">
-                          Follow-up appointments and discharge instructions will
-                          be documented here.
-                        </p>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
         </TabsContent>
