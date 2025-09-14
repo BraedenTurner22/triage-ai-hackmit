@@ -179,7 +179,106 @@ export function PatientDetails({ patient }: PatientDetailsProps) {
             <TabsTrigger value="ai">Treatment</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="overview" className="space-y-4">
+      {/* Vitals Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <Card
+          className={isVitalCritical("heart") ? "border-status-critical" : ""}
+        >
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">Heart Rate</p>
+                <p className="text-2xl font-bold">{patient.vitals.heartRate}</p>
+                <p className="text-xs text-muted-foreground">bpm</p>
+              </div>
+              <Heart
+                className={`w-8 h-8 ${
+                  isVitalCritical("heart")
+                    ? "text-red-500"
+                    : "text-muted-foreground"
+                }`}
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card
+          className={
+            isVitalCritical("respiratory") ? "border-status-critical" : ""
+          }
+        >
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">
+                  Respiratory Rate
+                </p>
+                <p className="text-2xl font-bold">
+                  {patient.vitals.respiratoryRate}
+                </p>
+                <p className="text-xs text-muted-foreground">breaths/min</p>
+              </div>
+              <Wind
+                className={`w-8 h-8 ${
+                  isVitalCritical("respiratory")
+                    ? "text-red-500"
+                    : "text-muted-foreground"
+                }`}
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card
+          className={isVitalCritical("pain") ? "border-status-critical" : ""}
+        >
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex-1">
+                <p className="text-sm text-muted-foreground">Pain Level</p>
+                <div className="flex items-center gap-4">
+                  <div>
+                    <p className="text-2xl font-bold">
+                      {patient.vitals.painLevel}/10
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      patient reported
+                    </p>
+                  </div>
+                  {patient.painAssessment && (
+                    <div className="text-right">
+                      <p className="text-lg font-semibold text-blue-600">
+                        {patient.painAssessment.medical_pain_level}/10
+                      </p>
+                      <p className="text-xs text-blue-500">
+                        AI detected
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <Activity
+                className={`w-8 h-8 ${
+                  isVitalCritical("pain")
+                    ? "text-red-500"
+                    : "text-muted-foreground"
+                }`}
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+      </div>
+
+      {/* Detailed Information Tabs */}
+      <Tabs defaultValue="overview" className="w-full">
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="overview">Medication and Allergies</TabsTrigger>
+          <TabsTrigger value="history">Symptoms and Video Analysis</TabsTrigger>
+          <TabsTrigger value="ai">Treatment</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="overview" className="space-y-4">
             <Card>
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
