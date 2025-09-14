@@ -1,4 +1,4 @@
-import { EDDashboard } from "@/components/EDDashboard";
+import { CleanTriageInterface } from "@/components/CleanTriageInterface";
 import { Activity } from "lucide-react";
 import { Link } from "react-router-dom";
 import { Patient } from "@/types/patient";
@@ -6,26 +6,22 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
 const TriageAnalysis = () => {
-  const handlePatientAdd = async (newPatient: Patient) => {
+  const handlePatientAdd = async (patientInfo: any) => {
     try {
-      const { error } = await supabase.from("patients").insert({
-        name: newPatient.name,
-        age: newPatient.age,
-        gender: newPatient.gender,
-        arrival: newPatient.arrivalTime.toISOString(),
-        patient_summary: newPatient.aiSummary || newPatient.chiefComplaint,
-        triage_level: newPatient.triageLevel,
-        heart_rate: newPatient.vitals.heartRate,
-        respiratory_rate: newPatient.vitals.respiratoryRate,
-        pain_level: newPatient.vitals.painLevel,
-      });
+      // The backend smart triage system already adds the patient to Supabase
+      // This handler just shows a success message and could trigger dashboard updates
+      const patientName = patientInfo.name || 'Patient';
+      const patientAge = patientInfo.age || 'Unknown age';
+      const triageLevel = patientInfo.triage_level || 'Unknown priority';
 
-      if (error) throw error;
+      toast.success(`${patientName} (${patientAge}) added to queue with priority level ${triageLevel}`);
 
-      toast.success("Patient added successfully");
+      // Optional: trigger a dashboard refresh or real-time update here
+      console.log("Smart triage patient added:", patientInfo);
+
     } catch (error) {
-      console.error("Error adding patient:", error);
-      toast.error("Failed to add patient");
+      console.error("Error handling patient add:", error);
+      toast.error("Error processing patient information");
     }
   };
 
@@ -77,7 +73,7 @@ const TriageAnalysis = () => {
               ← Back to Home
             </Link>
           </div>
-          <EDDashboard onPatientAdd={handlePatientAdd} />
+          <CleanTriageInterface onPatientAdd={handlePatientAdd} />
         </div>
       </div>
     </div>
