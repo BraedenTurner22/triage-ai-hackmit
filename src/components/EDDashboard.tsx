@@ -687,14 +687,9 @@ export function EDDashboard({ onPatientAdd }: EDDashboardProps) {
       arrivalTime: new Date(),
       triageLevel: 3, // Default to moderate
       vitals: {
-        temperature: 98.6,
-        bloodPressure: {
-          systolic: 120,
-          diastolic: 80,
-        },
         heartRate: 80,
         respiratoryRate: 16,
-        oxygenSaturation: 98,
+        painLevel: 5, // Default moderate pain level
       },
       allergies: [],
       medications: [],

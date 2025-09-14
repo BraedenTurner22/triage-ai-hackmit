@@ -17,6 +17,7 @@ const TriageAnalysis = () => {
         triage_level: newPatient.triageLevel,
         heart_rate: newPatient.vitals.heartRate,
         respiratory_rate: newPatient.vitals.respiratoryRate,
+        pain_level: newPatient.vitals.painLevel,
       });
 
       if (error) throw error;

@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { PatientQueue } from "@/components/PatientQueue";
 import { PatientDetails } from "@/components/PatientDetails";
-import { Patient } from "@/types/patient";
+import { Patient, getTriageLabel } from "@/types/patient";
 import { Card, CardContent } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { supabase } from "@/integrations/supabase/client";
@@ -10,17 +10,49 @@ import { Link } from "react-router-dom";
 import {
   Activity,
   Users,
-  AlertTriangle,
   Clock,
   TrendingUp,
   UserCheck,
+  PieChart as PieChartIcon,
 } from "lucide-react";
+import {
+  Chart as ChartJS,
+  ArcElement,
+  Tooltip,
+  Legend,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  BarElement,
+} from "chart.js";
+import { Pie, Bar } from "react-chartjs-2";
+
+ChartJS.register(
+  ArcElement,
+  Tooltip,
+  Legend,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  BarElement
+);
 
 const Dashboard = () => {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
+
+  // Triage level colors matching patient queue (from CSS variables)
+  const triageColors = {
+    1: "hsl(0, 84%, 50%)", // Critical - Red
+    2: "hsl(25, 95%, 53%)", // Urgent - Orange
+    3: "hsl(48, 95%, 53%)", // Less Urgent - Yellow
+    4: "hsl(142, 71%, 45%)", // Minor - Green
+    5: "hsl(0, 35%, 85%)", // Non-urgent - Light Rose
+  };
 
   // Fetch patients from Supabase
   useEffect(() => {
@@ -80,13 +112,8 @@ const Dashboard = () => {
           chiefComplaint: record.patient_summary || "No summary available",
           vitals: {
             heartRate: record.heart_rate,
-            bloodPressure: {
-              systolic: 120, // Default values since not in DB
-              diastolic: 80,
-            },
             respiratoryRate: record.respiratory_rate,
-            temperature: 98.6, // Default value
-            oxygenSaturation: 98, // Default value
+            painLevel: record.pain_level || 5, // Default to 5 if not set
           },
           allergies: [],
           medications: [],
@@ -141,8 +168,6 @@ const Dashboard = () => {
 
   const stats = useMemo(() => {
     const waitingPatients = patients.filter((p) => p.status === "waiting");
-    const criticalCount = patients.filter((p) => p.triageLevel <= 2).length;
-    const urgentCount = patients.filter((p) => p.triageLevel === 3).length;
     const totalWaiting = waitingPatients.length;
 
     // Calculate average wait time in minutes
@@ -159,14 +184,126 @@ const Dashboard = () => {
     const maxCapacity = 20;
     const queuePercentage = Math.round((totalWaiting / maxCapacity) * 100);
 
+    // Calculate triage level distribution for pie chart
+    const triageCounts = [1, 2, 3, 4, 5]
+      .map((level) => ({
+        name: getTriageLabel(level as 1 | 2 | 3 | 4 | 5),
+        value: patients.filter((p) => p.triageLevel === level).length,
+        level: level,
+      }))
+      .filter((item) => item.value > 0); // Only include levels with patients
+
+    // Calculate individual wait times for each patient (sorted by wait time)
+    const waitTimeData = waitingPatients
+      .map((p) => ({
+        name: p.name,
+        waitTime: Math.round(
+          (Date.now() - p.arrivalTime.getTime()) / (1000 * 60)
+        ), // in minutes
+        triageLevel: p.triageLevel,
+      }))
+      .sort((a, b) => a.waitTime - b.waitTime); // Sort by wait time (ascending)
+
     return {
-      criticalCount,
-      urgentCount,
       totalWaiting,
       avgWaitTime: Math.round(avgWaitTime),
       queuePercentage,
+      maxCapacity,
+      triageDistribution: triageCounts,
+      waitTimeData,
     };
   }, [patients]);
+
+  // Chart.js configuration (after stats is defined)
+  const pieChartData = {
+    labels: stats.triageDistribution.map((item) => item.name),
+    datasets: [
+      {
+        data: stats.triageDistribution.map((item) => item.value),
+        backgroundColor: stats.triageDistribution.map(
+          (item) => triageColors[item.level as keyof typeof triageColors]
+        ),
+        borderColor: "#ffffff",
+        borderWidth: 2,
+      },
+    ],
+  };
+
+  const pieChartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        position: "bottom" as const,
+      },
+    },
+  };
+
+  // Wait time chart configuration
+  const waitTimeChartData = {
+    labels: stats.waitTimeData.map((item) => item.name),
+    datasets: [
+      {
+        type: "bar" as const,
+        data: stats.waitTimeData.map((item) => item.waitTime),
+        backgroundColor: stats.waitTimeData.map(
+          (item) => triageColors[item.triageLevel]
+        ),
+        borderColor: stats.waitTimeData.map(
+          (item) => triageColors[item.triageLevel]
+        ),
+        borderWidth: 1,
+      },
+      {
+        type: "line" as const,
+        label: "Average Wait Time",
+        data: Array(stats.waitTimeData.length).fill(stats.avgWaitTime),
+        borderColor: "#ef4444",
+        borderWidth: 3,
+        borderDash: [5, 5],
+        fill: false,
+        pointRadius: 0,
+        pointHoverRadius: 0,
+      },
+    ],
+  };
+
+  const waitTimeChartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: {
+        position: "bottom" as const,
+        labels: {
+          filter: function (legendItem: any) {
+            // Only show the "Average Wait Time" legend item, hide the bar chart legend
+            return legendItem.text === "Average Wait Time";
+          },
+        },
+      },
+      tooltip: {
+        filter: function (tooltipItem: any) {
+          // Hide tooltip for the average line points
+          return tooltipItem.datasetIndex !== 1;
+        },
+      },
+    },
+    scales: {
+      y: {
+        beginAtZero: true,
+        title: {
+          display: true,
+          text: "Wait Time (minutes)",
+        },
+      },
+      x: {
+        title: {
+          display: true,
+          text: "Patients (sorted by wait time)",
+        },
+      },
+    },
+  };
 
   return (
     <div className="min-h-screen relative">
@@ -226,10 +363,10 @@ const Dashboard = () => {
             </div>
           ) : (
             <>
-              <div className="flex gap-6 min-h-[600px]">
+              <div className="flex gap-6 h-[calc(100vh-12rem)]">
                 {/* Left Sidebar - Patient Queue Container */}
                 <div className="w-96 shrink-0">
-                  <div className="bg-card rounded-lg border border-border shadow-lg h-full">
+                  <div className="bg-card rounded-lg border border-border shadow-lg h-full flex flex-col">
                     <div className="p-4 border-b border-border">
                       <h2 className="text-lg font-semibold text-card-foreground flex items-center gap-2">
                         <Users className="w-5 h-5" />
@@ -241,7 +378,7 @@ const Dashboard = () => {
                     </div>
 
                     {/* Scrollable Patient Queue */}
-                    <div className="overflow-y-auto h-[calc(100%-5rem)] p-4">
+                    <div className="overflow-y-auto flex-1 p-4">
                       <PatientQueue
                         patients={patients}
                         onPatientSelect={handlePatientSelect}
@@ -276,103 +413,123 @@ const Dashboard = () => {
                           Dashboard Overview
                         </h3>
 
-                        {/* Stats Cards in Right Panel */}
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                          <Card className="bg-gradient-to-br from-status-critical/10 to-status-critical/5 border-status-critical/20 hover:shadow-lg transition-all duration-300">
-                            <CardContent className="p-4">
-                              <div className="flex items-center justify-between">
-                                <div>
-                                  <p className="text-sm font-medium text-muted-foreground">
-                                    Critical
-                                  </p>
-                                  <p className="text-3xl font-bold text-status-critical">
-                                    {stats.criticalCount}
-                                  </p>
+                        {/* Dashboard Content */}
+                        <div className="space-y-6">
+                          {/* Charts Row */}
+                          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                            {/* Triage Distribution Pie Chart - Made Smaller */}
+                            <Card className="bg-gradient-to-br from-primary/5 to-primary/10 border-primary/20">
+                              <CardContent className="p-6">
+                                <div className="flex items-center gap-2 mb-4">
+                                  <PieChartIcon className="w-5 h-5 text-primary" />
+                                  <h4 className="text-lg font-semibold">
+                                    Triage Distribution
+                                  </h4>
                                 </div>
-                                <AlertTriangle className="w-8 h-8 text-status-critical/50" />
-                              </div>
-                            </CardContent>
-                          </Card>
+                                {stats.triageDistribution.length > 0 ? (
+                                  <div className="h-48 w-full">
+                                    {pieChartData.datasets[0].data.length >
+                                      0 && (
+                                      <div
+                                        style={{
+                                          position: "relative",
+                                          height: "100%",
+                                          width: "100%",
+                                        }}
+                                      >
+                                        <Pie
+                                          data={pieChartData}
+                                          options={pieChartOptions}
+                                        />
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div className="h-48 flex items-center justify-center text-muted-foreground">
+                                    No patients in queue
+                                  </div>
+                                )}
+                              </CardContent>
+                            </Card>
 
-                          <Card className="bg-gradient-to-br from-status-urgent/10 to-status-urgent/5 border-status-urgent/20 hover:shadow-lg transition-all duration-300">
-                            <CardContent className="p-4">
-                              <div className="flex items-center justify-between">
-                                <div>
-                                  <p className="text-sm font-medium text-muted-foreground">
-                                    Urgent
-                                  </p>
-                                  <p className="text-3xl font-bold text-status-urgent">
-                                    {stats.urgentCount}
-                                  </p>
+                            {/* Wait Times Chart - New */}
+                            <Card className="lg:col-span-2 bg-gradient-to-br from-blue-50 to-blue-100 border-blue-200">
+                              <CardContent className="p-6">
+                                <div className="flex items-center gap-2 mb-4">
+                                  <Clock className="w-5 h-5 text-blue-600" />
+                                  <h4 className="text-lg font-semibold">
+                                    Patient Wait Times
+                                  </h4>
+                                  <span className="text-sm text-muted-foreground">
+                                    (sorted by wait time)
+                                  </span>
                                 </div>
-                                <Users className="w-8 h-8 text-status-urgent/50" />
-                              </div>
-                            </CardContent>
-                          </Card>
+                                {stats.waitTimeData.length > 0 ? (
+                                  <div className="h-48 w-full">
+                                    <Bar
+                                      data={waitTimeChartData}
+                                      options={waitTimeChartOptions}
+                                    />
+                                  </div>
+                                ) : (
+                                  <div className="h-48 flex items-center justify-center text-muted-foreground">
+                                    No patients currently waiting
+                                  </div>
+                                )}
+                              </CardContent>
+                            </Card>
+                          </div>
 
-                          <Card className="bg-gradient-to-br from-primary/10 to-primary/5 border-primary/20 hover:shadow-lg transition-all duration-300">
-                            <CardContent className="p-4">
-                              <div className="flex items-center justify-between">
-                                <div>
-                                  <p className="text-sm font-medium text-muted-foreground">
-                                    Total Waiting
-                                  </p>
-                                  <p className="text-3xl font-bold text-primary">
-                                    {stats.totalWaiting}
-                                  </p>
+                          {/* Stats Cards */}
+                          <div className="flex gap-6">
+                            <Card className="w-1/4 bg-gradient-to-br from-primary/10 to-primary/5 border-primary/20 hover:shadow-lg transition-all duration-300">
+                              <CardContent className="p-6">
+                                <div className="flex items-center justify-between">
+                                  <div>
+                                    <p className="text-sm font-medium text-muted-foreground">
+                                      Total Waiting
+                                    </p>
+                                    <p className="text-3xl font-bold text-primary">
+                                      {stats.totalWaiting}
+                                    </p>
+                                  </div>
+                                  <UserCheck className="w-8 h-8 text-primary/50" />
                                 </div>
-                                <UserCheck className="w-8 h-8 text-primary/50" />
-                              </div>
-                            </CardContent>
-                          </Card>
+                              </CardContent>
+                            </Card>
 
-                          <Card className="bg-gradient-to-br from-secondary/10 to-secondary/5 border-secondary/20 hover:shadow-lg transition-all duration-300">
-                            <CardContent className="p-4">
-                              <div className="flex items-center justify-between">
-                                <div>
-                                  <p className="text-sm font-medium text-muted-foreground">
-                                    Avg Wait
-                                  </p>
-                                  <p className="text-3xl font-bold text-secondary-foreground">
-                                    {stats.avgWaitTime}
-                                    <span className="text-lg">min</span>
-                                  </p>
+                            <Card className="w-3/4 bg-gradient-to-br from-accent/10 to-accent/5 border-accent/20 hover:shadow-lg transition-all duration-300">
+                              <CardContent className="p-6">
+                                <div className="flex items-center justify-between">
+                                  <div>
+                                    <p className="text-sm font-medium text-muted-foreground">
+                                      Queue Load (Maximum capacity:{" "}
+                                      {stats.maxCapacity})
+                                    </p>
+                                    <p className="text-3xl font-bold text-black">
+                                      {stats.queuePercentage}
+                                      <span className="text-lg">%</span>
+                                    </p>
+                                  </div>
+                                  <TrendingUp className="w-8 h-8 text-accent/50" />
                                 </div>
-                                <Clock className="w-8 h-8 text-secondary/50" />
-                              </div>
-                            </CardContent>
-                          </Card>
-
-                          <Card className="bg-gradient-to-br from-accent/10 to-accent/5 border-accent/20 hover:shadow-lg transition-all duration-300 lg:col-span-2">
-                            <CardContent className="p-4">
-                              <div className="flex items-center justify-between">
-                                <div>
-                                  <p className="text-sm font-medium text-muted-foreground">
-                                    Queue Load
-                                  </p>
-                                  <p className="text-3xl font-bold text-black">
-                                    {stats.queuePercentage}
-                                    <span className="text-lg">%</span>
-                                  </p>
+                                <div className="mt-2 w-full bg-muted rounded-full h-2">
+                                  <div
+                                    className="h-full rounded-full transition-all duration-500"
+                                    style={{
+                                      width: `${Math.min(
+                                        stats.queuePercentage,
+                                        100
+                                      )}%`,
+                                      backgroundColor: `hsl(${
+                                        120 - stats.queuePercentage * 1.2
+                                      }, 70%, 50%)`,
+                                    }}
+                                  />
                                 </div>
-                                <TrendingUp className="w-8 h-8 text-accent/50" />
-                              </div>
-                              <div className="mt-2 w-full bg-muted rounded-full h-2">
-                                <div
-                                  className="h-full rounded-full transition-all duration-500"
-                                  style={{
-                                    width: `${Math.min(
-                                      stats.queuePercentage,
-                                      100
-                                    )}%`,
-                                    backgroundColor: `hsl(${
-                                      120 - stats.queuePercentage * 1.2
-                                    }, 70%, 50%)`,
-                                  }}
-                                />
-                              </div>
-                            </CardContent>
-                          </Card>
+                              </CardContent>
+                            </Card>
+                          </div>
                         </div>
 
                         <div className="mt-8 text-center">

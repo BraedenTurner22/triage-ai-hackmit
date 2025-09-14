@@ -8,7 +8,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Clock, User, AlertCircle, Check } from "lucide-react";
+import { Clock, Check } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
 interface PatientQueueProps {
@@ -35,7 +35,7 @@ export function PatientQueue({
   };
 
   return (
-    <TooltipProvider>
+    <TooltipProvider delayDuration={300}>
       <div className="space-y-3">
         {patients.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
@@ -59,25 +59,31 @@ export function PatientQueue({
                 onClick={() => onPatientSelect(patient)}
               >
                 <CardContent className="p-3">
-                  {/* Header row with name, triage, and actions */}
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
                       <div
-                        className={`w-3 h-3 rounded-full ${getTriageColor(
+                        className={`w-6 h-6 rounded-full ${getTriageColor(
                           patient.triageLevel
-                        )}`}
-                        aria-label={`Triage level ${patient.triageLevel}`}
-                      />
-                      <span className="font-medium text-foreground">
-                        {patient.name}
-                      </span>
+                        )} flex items-center justify-center text-white text-xs font-bold`}
+                      >
+                        {patient.triageLevel}
+                      </div>
+                      <div>
+                        <div className="font-medium text-foreground">
+                          {patient.name}
+                        </div>
+                        <div className="text-sm text-muted-foreground">
+                          Age {patient.age} •{" "}
+                          {formatDistanceToNow(patient.arrivalTime)}
+                        </div>
+                      </div>
                     </div>
                     <div className="flex items-center gap-2">
                       <Badge
                         variant="outline"
                         className={`${getTriageColor(
                           patient.triageLevel
-                        )} text-white border-0 text-xs px-2 py-0.5`}
+                        )} text-white border-0 text-xs px-2 py-1`}
                       >
                         {getTriageLabel(patient.triageLevel)}
                       </Badge>
@@ -93,60 +99,15 @@ export function PatientQueue({
                             <Check className="h-3 w-3" />
                           </Button>
                         </TooltipTrigger>
-                        <TooltipContent>
+                        <TooltipContent
+                          side="top"
+                          sideOffset={8}
+                          className="z-[9999] bg-gray-900 text-white border-gray-700"
+                        >
                           <p>Successfully treated</p>
                         </TooltipContent>
                       </Tooltip>
                     </div>
-                  </div>
-
-                  {/* Content in two columns to make it more horizontal */}
-                  <div className="grid grid-cols-2 gap-3 text-sm">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-1.5 text-muted-foreground">
-                        <User className="w-3 h-3" />
-                        <span>
-                          {patient.age}y, {patient.gender}
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1.5 text-muted-foreground">
-                        <Clock className="w-3 h-3" />
-                        <span className="text-xs">
-                          {formatDistanceToNow(patient.arrivalTime)}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-1 justify-end">
-                        <span className="text-xs text-muted-foreground">
-                          HR:
-                        </span>
-                        <span className="text-xs font-medium">
-                          {patient.vitals.heartRate}
-                        </span>
-                        <span className="text-xs text-muted-foreground ml-2">
-                          O2:
-                        </span>
-                        <span className="text-xs font-medium">
-                          {patient.vitals.oxygenSaturation}%
-                        </span>
-                      </div>
-                      <div className="flex items-center gap-1 justify-end">
-                        <span className="text-xs text-muted-foreground">
-                          BP:
-                        </span>
-                        <span className="text-xs font-medium">
-                          {patient.vitals.bloodPressure.systolic}/
-                          {patient.vitals.bloodPressure.diastolic}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Chief complaint spanning full width but compact */}
-                  <div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
-                    <AlertCircle className="w-3 h-3 flex-shrink-0" />
-                    <span className="truncate">{patient.chiefComplaint}</span>
                   </div>
                 </CardContent>
               </Card>
