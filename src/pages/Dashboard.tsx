@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { PatientQueue } from "@/components/PatientQueue";
 import { PatientDetails } from "@/components/PatientDetails";
 import { TypingText } from "@/components/TypingText";
@@ -9,6 +9,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Link } from "react-router-dom";
+import OpenAI from "openai";
 import {
   Activity,
   Users,
@@ -19,6 +20,8 @@ import {
   Sparkles,
   RefreshCw,
   Loader2,
+  Brain,
+  AlertTriangle,
 } from "lucide-react";
 import {
   Chart as ChartJS,
@@ -57,6 +60,15 @@ const Dashboard = () => {
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [queueSummary, setQueueSummary] = useState<string>("");
   const [loadingQueueSummary, setLoadingQueueSummary] = useState(false);
+  const [aiPlan, setAiPlan] = useState<string>("");
+  const [isGeneratingPlan, setIsGeneratingPlan] = useState(false);
+  const [displayedPlan, setDisplayedPlan] = useState<string>("");
+  const [isTyping, setIsTyping] = useState(false);
+  const [isGeneratingRef, setIsGeneratingRef] = useState(false);
+
+  const openAIRef = useRef<OpenAI | null>(null);
+  const typewriterTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastGenerationRef = useRef<string>("");
 
   // Triage level colors matching patient queue (from CSS variables)
   const triageColors = {
@@ -67,8 +79,17 @@ const Dashboard = () => {
     5: "hsl(0, 35%, 85%)", // Non-urgent - Light Rose
   };
 
-  // Fetch patients from Supabase
+  // Initialize OpenAI and fetch patients
   useEffect(() => {
+    // Initialize OpenAI
+    const envApiKey = import.meta.env.VITE_OPENAI_VOICE_API_KEY;
+    if (envApiKey && envApiKey !== "your_api_key_here") {
+      openAIRef.current = new OpenAI({
+        apiKey: envApiKey.trim(),
+        dangerouslyAllowBrowser: true,
+      });
+    }
+
     fetchPatients();
 
     // Set up realtime subscription
@@ -89,6 +110,9 @@ const Dashboard = () => {
 
     return () => {
       supabase.removeChannel(channel);
+      if (typewriterTimeoutRef.current) {
+        clearTimeout(typewriterTimeoutRef.current);
+      }
     };
   }, []);
 
@@ -114,15 +138,37 @@ const Dashboard = () => {
 
       // Hardcoded medications and allergies for demo
       const medicationOptions = [
-        "Lisinopril 10mg", "Metformin 500mg", "Atorvastatin 20mg", "Levothyroxine 50mcg",
-        "Amlodipine 5mg", "Omeprazole 20mg", "Metoprolol 25mg", "Losartan 50mg",
-        "Hydrochlorothiazide 25mg", "Simvastatin 40mg", "Albuterol Inhaler",
-        "Gabapentin 300mg", "Tramadol 50mg", "Ibuprofen 600mg", "Acetaminophen 500mg"
+        "Lisinopril 10mg",
+        "Metformin 500mg",
+        "Atorvastatin 20mg",
+        "Levothyroxine 50mcg",
+        "Amlodipine 5mg",
+        "Omeprazole 20mg",
+        "Metoprolol 25mg",
+        "Losartan 50mg",
+        "Hydrochlorothiazide 25mg",
+        "Simvastatin 40mg",
+        "Albuterol Inhaler",
+        "Gabapentin 300mg",
+        "Tramadol 50mg",
+        "Ibuprofen 600mg",
+        "Acetaminophen 500mg",
       ];
 
       const allergyOptions = [
-        "Penicillin", "Peanuts", "Shellfish", "Latex", "Aspirin", "Sulfa drugs",
-        "Tree nuts", "Eggs", "Milk", "Codeine", "Iodine", "Morphine", "Bees/Wasps"
+        "Penicillin",
+        "Peanuts",
+        "Shellfish",
+        "Latex",
+        "Aspirin",
+        "Sulfa drugs",
+        "Tree nuts",
+        "Eggs",
+        "Milk",
+        "Codeine",
+        "Iodine",
+        "Morphine",
+        "Bees/Wasps",
       ];
 
       // Function to get random items from array
@@ -150,7 +196,7 @@ const Dashboard = () => {
           vitals: {
             heartRate: record.heart_rate,
             respiratoryRate: record.respiratory_rate,
-            painLevel: record.pain_level || 5, // Default to 5 if not set
+            painLevel: (record as any).pain_level || 5, // Default to 5 if not set
           },
           allergies: getRandomItems(allergyOptions, randomAllergyCount),
           medications: getRandomItems(medicationOptions, randomMedCount),
@@ -172,6 +218,237 @@ const Dashboard = () => {
       setLoading(false);
     }
   };
+
+  // Generate AI management plan
+  const generateAIPlan = async (patientData: Patient[]) => {
+    // Prevent duplicate calls
+    const patientKey = JSON.stringify(
+      patientData.map((p) => ({
+        id: p.id,
+        name: p.name,
+        triageLevel: p.triageLevel,
+      }))
+    );
+    if (isGeneratingRef || lastGenerationRef.current === patientKey) {
+      console.log("🚫 Skipping duplicate AI generation");
+      return;
+    }
+
+    console.log("🚀 Starting NEW AI generation");
+    setIsGeneratingRef(true);
+    lastGenerationRef.current = patientKey;
+
+    if (!openAIRef.current) {
+      console.error("OpenAI not initialized");
+      setIsGeneratingRef(false);
+      return;
+    }
+
+    setIsGeneratingPlan(true);
+    setDisplayedPlan("");
+    setIsTyping(false);
+
+    // Clear any existing typewriter
+    if (typewriterTimeoutRef.current) {
+      clearTimeout(typewriterTimeoutRef.current);
+      typewriterTimeoutRef.current = null;
+    }
+
+    try {
+      // Create prompt based on current patient data
+      const waitingPatients = patientData.filter((p) => p.status === "waiting");
+      const criticalCount = waitingPatients.filter(
+        (p) => p.triageLevel === 1
+      ).length;
+      const emergentCount = waitingPatients.filter(
+        (p) => p.triageLevel === 2
+      ).length;
+      const urgentCount = waitingPatients.filter(
+        (p) => p.triageLevel === 3
+      ).length;
+      const minorCount = waitingPatients.filter(
+        (p) => p.triageLevel === 4 || p.triageLevel === 5
+      ).length;
+      const totalWaiting = waitingPatients.length;
+
+      const avgWaitTime =
+        waitingPatients.length > 0
+          ? waitingPatients.reduce((acc, p) => {
+              const waitMinutes =
+                (Date.now() - p.arrivalTime.getTime()) / (1000 * 60);
+              return acc + waitMinutes;
+            }, 0) / waitingPatients.length
+          : 0;
+
+      // Get patient names by triage level for personalized recommendations
+      const criticalPatients = waitingPatients.filter(
+        (p) => p.triageLevel === 1
+      );
+      const emergentPatients = waitingPatients.filter(
+        (p) => p.triageLevel === 2
+      );
+      const urgentPatients = waitingPatients.filter((p) => p.triageLevel === 3);
+      const minorPatients = waitingPatients.filter(
+        (p) => p.triageLevel === 4 || p.triageLevel === 5
+      );
+
+      const prompt = `You are an experienced emergency department triage coordinator. Provide a clear, professional 4-5 sentence management plan based on current patient data.
+
+CURRENT PATIENT QUEUE:
+Total waiting: ${totalWaiting} patients
+Average wait time: ${Math.round(avgWaitTime)} minutes
+
+CRITICAL PATIENTS (Level 1) - ${criticalCount} patients:
+${criticalPatients.map((p) => `• ${p.name} (${p.chiefComplaint})`).join("\n")}
+
+EMERGENT PATIENTS (Level 2) - ${emergentCount} patients:  
+${emergentPatients.map((p) => `• ${p.name} (${p.chiefComplaint})`).join("\n")}
+
+URGENT PATIENTS (Level 3) - ${urgentCount} patients:
+${urgentPatients.map((p) => `• ${p.name} (${p.chiefComplaint})`).join("\n")}
+
+MINOR PATIENTS (Level 4-5) - ${minorCount} patients:
+${minorPatients.map((p) => `• ${p.name} (${p.chiefComplaint})`).join("\n")}
+
+INSTRUCTIONS:
+- Reference specific patient names when making recommendations
+- Critical patients need immediate hospital transfer/resuscitation
+- Emergent patients may need immediate attention or transfer
+- Provide specific workflow recommendations
+- Keep response to exactly 4-5 sentences
+- Start your response directly with actionable recommendations
+
+Management Plan:`;
+
+      const response = await openAIRef.current.chat.completions.create({
+        model: "gpt-4-turbo-preview",
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are a professional emergency department triage coordinator. Provide clear, accurate, and actionable management plans. Always use perfect spelling and grammar. Reference patients by name when making specific recommendations. Pay special attention to spelling common words correctly, especially at the beginning of sentences (e.g., 'Firstly', 'Immediately', 'Prioritize').",
+          },
+          {
+            role: "user",
+            content: prompt,
+          },
+        ],
+        max_tokens: 400,
+        temperature: 0.1, // Very low temperature to reduce randomness
+        top_p: 0.8,
+        frequency_penalty: 0.0, // Remove penalties that might cause token repetition
+        presence_penalty: 0.0,
+      });
+
+      let generatedPlan =
+        response.choices[0]?.message?.content ||
+        "Unable to generate AI plan at this time.";
+
+      // Clean up the response
+      generatedPlan = generatedPlan.trim();
+
+      // Apply the cleaning function
+      console.log(
+        "🔥 BEFORE cleanFirstWord:",
+        JSON.stringify(generatedPlan.substring(0, 20))
+      );
+      generatedPlan = cleanFirstWord(generatedPlan);
+      console.log(
+        "🔥 AFTER cleanFirstWord:",
+        JSON.stringify(generatedPlan.substring(0, 20))
+      );
+
+      setAiPlan(generatedPlan);
+
+      // Start typewriter effect
+      startTypewriterEffect(generatedPlan);
+    } catch (error) {
+      console.error("Error generating AI plan:", error);
+      const fallbackPlan =
+        "AI analysis temporarily unavailable. Please prioritize critical patients and monitor queue capacity.";
+      setAiPlan(fallbackPlan);
+      startTypewriterEffect(fallbackPlan);
+    } finally {
+      setIsGeneratingPlan(false);
+      setIsGeneratingRef(false);
+    }
+  };
+
+  // Clean first word function (defined outside for reuse)
+  const cleanFirstWord = (text: string): string => {
+    if (!text) return text;
+
+    // Remove any leading junk like *, -, digits, or duplicated first letters
+    text = text.trim().replace(/^[^A-Za-z]+/, "");
+
+    // Fix duplicate first letter issue (e.g. IImmediately → Immediately)
+    text = text.replace(/^([A-Za-z])\1+/, "$1");
+
+    // Capitalize first letter just in case
+    if (text.length > 0) {
+      text = text.charAt(0).toUpperCase() + text.slice(1);
+    }
+
+    return text;
+  };
+
+  // Typewriter effect function - FORCE CLEAN VERSION
+  const startTypewriterEffect = (text: string) => {
+    // Clear any existing typewriter first
+    if (typewriterTimeoutRef.current) {
+      clearTimeout(typewriterTimeoutRef.current);
+      typewriterTimeoutRef.current = null;
+    }
+
+    // AGGRESSIVELY clean the text multiple times
+    let cleanedText = text.trim();
+    cleanedText = cleanedText.replace(/^[^A-Za-z]+/, ""); // Remove leading non-letters
+    cleanedText = cleanedText.replace(/^([A-Za-z])\1+/, "$1"); // Fix duplicates
+    cleanedText = cleanedText.replace(/^([A-Za-z])\1+/, "$1"); // Apply twice for safety
+    cleanedText = cleanedText.replace(/^([A-Za-z])\1+/, "$1"); // Apply third time
+
+    // Ensure first letter is capitalized
+    if (cleanedText.length > 0) {
+      cleanedText = cleanedText.charAt(0).toUpperCase() + cleanedText.slice(1);
+    }
+
+    console.log(
+      "🎭 FINAL CLEANED TEXT:",
+      JSON.stringify(cleanedText.substring(0, 50))
+    );
+
+    // Set the entire text at once instead of character by character
+    setDisplayedPlan(cleanedText);
+    setIsTyping(false);
+
+    // Still do typewriter effect but without state corruption risk
+    setDisplayedPlan("");
+    setIsTyping(true);
+
+    let index = 0;
+    const typeSpeed = 30;
+
+    const typeNextCharacter = () => {
+      if (index < cleanedText.length) {
+        const nextChar = cleanedText[index];
+        setDisplayedPlan(cleanedText.substring(0, index + 1));
+        index++;
+        typewriterTimeoutRef.current = setTimeout(typeNextCharacter, typeSpeed);
+      } else {
+        setIsTyping(false);
+        typewriterTimeoutRef.current = null;
+      }
+    };
+
+    typeNextCharacter();
+  };
+
+  // Generate AI plan whenever patients data changes and we're on dashboard
+  useEffect(() => {
+    if (!loading && !selectedPatient && patients.length >= 0) {
+      generateAIPlan(patients);
+    }
+  }, [patients, loading, selectedPatient]);
 
   const handlePatientSelect = (patient: Patient) => {
     // If clicking the same patient, deselect it
@@ -202,7 +479,6 @@ const Dashboard = () => {
       toast.error("Failed to mark patient as treated");
     }
   };
-
 
   const stats = useMemo(() => {
     const waitingPatients = patients.filter((p) => p.status === "waiting");
@@ -257,7 +533,7 @@ const Dashboard = () => {
 
     try {
       const queueData = {
-        patients: patients.map(p => ({
+        patients: patients.map((p) => ({
           name: p.name,
           triage_level: p.triageLevel,
           pain_level: p.vitals.painLevel,
@@ -290,7 +566,9 @@ const Dashboard = () => {
       setQueueSummary(data.summary);
     } catch (error) {
       console.error("Error fetching queue management summary:", error);
-      setQueueSummary("Unable to generate queue management recommendations at this time. Please try again later.");
+      setQueueSummary(
+        "Unable to generate queue management recommendations at this time. Please try again later."
+      );
     } finally {
       setLoadingQueueSummary(false);
     }
@@ -343,6 +621,12 @@ const Dashboard = () => {
         ),
         borderWidth: 1,
       },
+    ],
+  };
+
+  const waitTimeLineData = {
+    labels: stats.waitTimeData.map((item) => item.name),
+    datasets: [
       {
         type: "line" as const,
         label: "Average Wait Time",
@@ -360,6 +644,14 @@ const Dashboard = () => {
   const waitTimeChartOptions = {
     responsive: true,
     maintainAspectRatio: false,
+    layout: {
+      padding: {
+        left: 20,
+        right: 10,
+        top: 10,
+        bottom: 10,
+      },
+    },
     plugins: {
       legend: {
         position: "bottom" as const,
@@ -384,11 +676,17 @@ const Dashboard = () => {
           display: true,
           text: "Wait Time (minutes)",
         },
+        ticks: {
+          maxTicksLimit: 6,
+        },
       },
       x: {
         title: {
           display: true,
           text: "Patients (sorted by wait time)",
+        },
+        ticks: {
+          maxRotation: 45,
         },
       },
     },
@@ -496,7 +794,7 @@ const Dashboard = () => {
                     </div>
                   ) : (
                     <div className="bg-card rounded-lg border border-border shadow-lg h-full flex flex-col">
-                      <div className="p-4 border-b border-border">
+                      <div className="p-6 border-b border-border">
                         <h3 className="text-2xl font-semibold text-card-foreground flex items-center gap-2">
                           <Activity className="w-6 h-6" />
                           Dashboard Overview
@@ -553,11 +851,11 @@ const Dashboard = () => {
                                     Patient Wait Times
                                   </h4>
                                   <span className="text-sm text-muted-foreground">
-                                    (sorted by wait time)
+                                    (sorted in increasing order)
                                   </span>
                                 </div>
                                 {stats.waitTimeData.length > 0 ? (
-                                  <div className="h-48 w-full">
+                                  <div className="h-56 w-full">
                                     <Bar
                                       data={waitTimeChartData}
                                       options={waitTimeChartOptions}
@@ -633,7 +931,9 @@ const Dashboard = () => {
                                 AI Queue Management Recommendations
                               </div>
                               <Button
-                                onClick={() => fetchQueueManagementSummary(true)}
+                                onClick={() =>
+                                  fetchQueueManagementSummary(true)
+                                }
                                 disabled={loadingQueueSummary}
                                 size="sm"
                                 variant="secondary"
@@ -652,7 +952,10 @@ const Dashboard = () => {
                               <div className="flex items-center justify-center py-8">
                                 <div className="text-center space-y-3">
                                   <Loader2 className="w-8 h-8 text-purple-600 mx-auto animate-spin" />
-                                  <p className="text-purple-600 font-medium">Generating queue management recommendations...</p>
+                                  <p className="text-purple-600 font-medium">
+                                    Generating queue management
+                                    recommendations...
+                                  </p>
                                   <p className="text-sm text-muted-foreground">
                                     Analyzing patient queue and staffing needs
                                   </p>
@@ -677,7 +980,9 @@ const Dashboard = () => {
                                       />
                                     ) : (
                                       <p className="text-center text-muted-foreground">
-                                        Select a patient from the queue to view their details, medical history, and manage their care.
+                                        Select a patient from the queue to view
+                                        their details, medical history, and
+                                        manage their care.
                                       </p>
                                     )}
                                   </div>

@@ -1,6 +1,6 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Link, useNavigate } from "react-router-dom";
-import { Activity, Users, ClipboardList, Lock } from "lucide-react";
+import { Activity, Users, ClipboardList, Lock, Brain } from "lucide-react";
 import { useState } from "react";
 import {
   Dialog,
@@ -85,98 +85,121 @@ const Index = () => {
               Minimize ER wait times without compromising on quality.
             </p>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8 w-full max-w-6xl relative z-10 items-center -mt-24">
-            {/* Nurse Dashboard Card */}
-            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-              <DialogTrigger asChild>
-                <Card className="h-80 cursor-pointer transition-all duration-300 hover:shadow-2xl hover:scale-105 bg-gradient-to-br from-blue-50 to-blue-100 border-2 border-blue-200 hover:border-blue-300">
-                  <CardContent className="flex flex-col items-center justify-center h-full p-8">
-                    <div className="bg-blue-500 p-6 rounded-full mb-6">
-                      <Users className="w-12 h-12 text-white" />
+          <div className="w-full max-w-7xl relative z-10 items-center text-center -mt-16">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 w-full items-center">
+              {/* Nurse Dashboard Card */}
+              <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+                <DialogTrigger asChild>
+                  <Card className="h-80 cursor-pointer transition-all duration-300 hover:shadow-2xl hover:scale-105 bg-gradient-to-br from-blue-50 to-blue-100 border-2 border-blue-200 hover:border-blue-300">
+                    <CardContent className="flex flex-col items-center justify-center h-full p-8">
+                      <div className="bg-blue-500 p-6 rounded-full mb-6">
+                        <Users className="w-12 h-12 text-white" />
+                      </div>
+                      <h3 className="text-2xl font-bold text-blue-900 mb-2">
+                        Nurse Dashboard
+                      </h3>
+                      <p className="text-blue-700 text-center">
+                        Monitor patient queue, view vitals, and manage triage
+                        priorities
+                      </p>
+                    </CardContent>
+                  </Card>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-md">
+                  <DialogHeader>
+                    <DialogTitle className="flex items-center gap-2">
+                      <Lock className="w-5 h-5" />
+                      Nurse Dashboard Access
+                    </DialogTitle>
+                    <DialogDescription>
+                      Please enter the nurse password to access the dashboard.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="password">Password</Label>
+                      <Input
+                        id="password"
+                        type="password"
+                        placeholder="Enter nurse password"
+                        value={password}
+                        onChange={(e) => {
+                          setPassword(e.target.value);
+                          setError(""); // Clear error when typing
+                        }}
+                        onKeyPress={handleKeyPress}
+                        className="w-full"
+                      />
                     </div>
-                    <h3 className="text-2xl font-bold text-blue-900 mb-2">
-                      Nurse Dashboard
+                    {error && (
+                      <p className="text-sm text-red-600 mt-2">{error}</p>
+                    )}
+                  </div>
+                  <DialogFooter className="flex justify-end gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setIsDialogOpen(false);
+                        setPassword("");
+                        setError("");
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                    <Button onClick={handlePasswordSubmit}>
+                      Access Dashboard
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+
+              {/* Nurse Image */}
+              <div className="flex justify-center mt-8 px-4">
+                <img
+                  src="/nurse.png"
+                  alt="Professional nurse"
+                  className="max-w-full h-auto max-h-120 object-contain drop-shadow-lg"
+                />
+              </div>
+
+              {/* Triage Analysis Card */}
+              <Link to="/triage-analysis">
+                <Card className="h-80 cursor-pointer transition-all duration-300 hover:shadow-2xl hover:scale-105 bg-gradient-to-br from-red-50 to-red-100 border-2 border-red-200 hover:border-red-300">
+                  <CardContent className="flex flex-col items-center justify-center h-full p-8">
+                    <div className="bg-red-500 p-6 rounded-full mb-6">
+                      <ClipboardList className="w-12 h-12 text-white" />
+                    </div>
+                    <h3 className="text-2xl font-bold text-red-900 mb-2">
+                      Begin Triage Analysis
                     </h3>
-                    <p className="text-blue-700 text-center">
-                      Monitor patient queue, view vitals, and manage triage
-                      priorities
+                    <p className="text-red-700 text-center">
+                      Start your AI-powered triage assessment
                     </p>
                   </CardContent>
                 </Card>
-              </DialogTrigger>
-              <DialogContent className="sm:max-w-md">
-                <DialogHeader>
-                  <DialogTitle className="flex items-center gap-2">
-                    <Lock className="w-5 h-5" />
-                    Nurse Dashboard Access
-                  </DialogTitle>
-                  <DialogDescription>
-                    Please enter the nurse password to access the dashboard.
-                  </DialogDescription>
-                </DialogHeader>
-                <div className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="password">Password</Label>
-                    <Input
-                      id="password"
-                      type="password"
-                      placeholder="Enter nurse password"
-                      value={password}
-                      onChange={(e) => {
-                        setPassword(e.target.value);
-                        setError(""); // Clear error when typing
-                      }}
-                      onKeyPress={handleKeyPress}
-                      className="w-full"
-                    />
-                  </div>
-                  {error && (
-                    <p className="text-sm text-red-600 mt-2">{error}</p>
-                  )}
-                </div>
-                <DialogFooter className="flex justify-end gap-2">
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setIsDialogOpen(false);
-                      setPassword("");
-                      setError("");
-                    }}
-                  >
-                    Cancel
-                  </Button>
-                  <Button onClick={handlePasswordSubmit}>
-                    Access Dashboard
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-
-            {/* Nurse Image */}
-            <div className="flex justify-center mt-8">
-              <img
-                src="/nurse.png"
-                alt="Professional nurse"
-                className="max-w-full h-auto max-h-120 object-contain drop-shadow-lg opacity-80"
-              />
+              </Link>
             </div>
 
-            {/* Triage Analysis Card */}
-            <Link to="/triage-analysis">
-              <Card className="h-80 cursor-pointer transition-all duration-300 hover:shadow-2xl hover:scale-105 bg-gradient-to-br from-red-50 to-red-100 border-2 border-red-200 hover:border-red-300">
-                <CardContent className="flex flex-col items-center justify-center h-full p-8">
-                  <div className="bg-red-500 p-6 rounded-full mb-6">
-                    <ClipboardList className="w-12 h-12 text-white" />
-                  </div>
-                  <h3 className="text-2xl font-bold text-red-900 mb-2">
-                    Begin Triage Analysis
-                  </h3>
-                  <p className="text-red-700 text-center">
-                    Start your AI-powered triage assessment
-                  </p>
-                </CardContent>
-              </Card>
-            </Link>
+            <div className="mt-8 flex justify-center">
+              {/* DoctorAid Card */}
+              <div className="w-full md:w-1/3 px-2">
+                <Link to="/doctor-aid">
+                  <Card className="h-80 cursor-pointer transition-all duration-300 hover:shadow-2xl hover:scale-105 bg-gradient-to-br from-green-50 to-green-100 border-2 border-green-200 hover:border-green-300">
+                    <CardContent className="flex flex-col items-center justify-center h-full p-8">
+                      <div className="bg-green-500 p-6 rounded-full mb-6">
+                        <Brain className="w-12 h-12 text-white" />
+                      </div>
+                      <h3 className="text-2xl font-bold text-green-900 mb-2">
+                        DoctorAid
+                      </h3>
+                      <p className="text-green-700 text-center">
+                        Real-time transcription and clinical suggestions for providers.
+                      </p>
+                    </CardContent>
+                  </Card>
+                </Link>
+              </div>
+            </div>
           </div>
         </div>
       </div>
