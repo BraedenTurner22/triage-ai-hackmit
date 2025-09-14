@@ -218,159 +218,100 @@ export function EDDashboard({ onPatientAdd }: EDDashboardProps) {
     setSpeechError(null);
   };
 
-  // Start the clean listening flow after AI finishes speaking
+  // Start listening after AI finishes speaking
   const startCleanListeningFlow = () => {
-    // Prevent starting if we're already in a listening phase or processing
-    if (listeningPhase !== "idle" || isProcessingResponse) {
-      console.log(
-        "🚫 Preventing duplicate listening flow - already active:",
-        listeningPhase
-      );
-      return;
-    }
-
-    console.log("🎯 Starting clean listening flow");
+    console.log("🎯 Starting listening flow after AI finished speaking");
+    
+    // Clear any existing state
     clearAllTimers();
-    stopSpeechRecognition(); // Ensure no existing session
     setListeningPhase("waiting");
     setTranscript("");
-    setHasSpokenYet(false);
     setSpeechError(null);
-    setIsProcessingResponse(false);
-
-    // Wait a bit longer to ensure AI audio has completely finished
+    
+    // Wait for AI speech to fully complete, then start recognition
     setTimeout(() => {
-      // Check current states directly rather than using stale closure values
-      if (!isProcessingResponse && !isSpeaking) {
-        console.log("🔄 Starting 5-second timeout and speech recognition");
-
-        // Start 5-second timeout
-        const timeout = setTimeout(() => {
-          console.log("⏰ 5-second timeout reached - no speech detected");
-          moveToNextQuestion();
-        }, 5000);
-
-        phaseTimerRef.current = timeout;
-        setPhaseTimer(timeout);
-
-        // Start speech recognition
+      if (!isSpeaking) {
+        console.log("🔄 AI finished - starting speech recognition");
         startSpeechRecognition();
       } else {
-        console.log("🚫 Cancelled listening flow - state changed");
+        console.log("🚫 AI still speaking - cannot start recognition");
       }
-    }, 1000); // Increased delay to prevent audio feedback
+    }, 1000);
   };
 
-  // Move to next question (either from timeout or after processing speech)
+  // Move to next question
   const moveToNextQuestion = () => {
-    // Use functional update to ensure we get the latest state
-    setCurrentQuestionIndex((currentIndex) => {
-      // Prevent multiple calls to this function
-      if (isProcessingResponse) {
-        console.log("🚫 Already processing - ignoring moveToNextQuestion");
-        return currentIndex;
-      }
+    // Prevent duplicate calls
+    if (isProcessingResponse) {
+      console.log("🚫 Already processing - ignoring duplicate moveToNextQuestion");
+      return;
+    }
+    
+    setIsProcessingResponse(true);
+    console.log(`➡️ Moving to next question from index ${currentQuestionIndex}`);
+    
+    // Clean up current state
+    clearAllTimers();
+    stopSpeechRecognition();
+    setListeningPhase("idle");
+    setTranscript("");
 
-      console.log(
-        `➡️ Moving to next question - Current index: ${currentIndex}`
+    const nextIndex = currentQuestionIndex + 1;
+    
+    if (nextIndex < triageQuestions.length) {
+      console.log(`✅ Moving to question ${nextIndex + 1}`);
+      setCurrentQuestionIndex(nextIndex);
+      setQuestionAnimating(true);
+
+      setTimeout(() => {
+        setQuestionAnimating(false);
+        setIsProcessingResponse(false); // Reset processing flag
+        const nextQuestion = triageQuestions[nextIndex];
+        console.log(`🗣️ Speaking question: "${nextQuestion.question}"`);
+        speakText(nextQuestion.question, true); // Start listening after speaking
+      }, 300);
+    } else {
+      // All questions complete
+      console.log("🎉 All questions complete - moving to video section");
+      setShowVideoSection(true);
+      setVideoStage("preview");
+      setIsProcessingResponse(false);
+      speakText(
+        "Great! Now we'll record two short videos for your medical assessment. First, I'll show you a camera preview.",
+        false
       );
-      setIsProcessingResponse(true);
-      clearAllTimers();
-      stopSpeechRecognition(); // This will also clear transcript and set phase to idle
-      setSpeechError(null);
-      
-      console.log("🧹 Cleaned up state for next question");
-
-      const nextIndex = currentIndex + 1;
-      console.log(
-        `📊 Next index will be: ${nextIndex} (total questions: ${triageQuestions.length})`
-      );
-
-      if (nextIndex < triageQuestions.length) {
-        console.log(`✅ Setting question index to ${nextIndex}`);
-        setQuestionAnimating(true);
-
-        setTimeout(() => {
-          setQuestionAnimating(false);
-          setIsProcessingResponse(false); // Allow next processing
-          const nextQuestion = triageQuestions[nextIndex];
-          console.log(`🗣️ Speaking next question: "${nextQuestion.question}"`);
-          speakText(nextQuestion.question, true); // This will trigger the listening flow again
-        }, 300);
-
-        return nextIndex;
-      } else {
-        // All questions complete
-        console.log("🎉 All questions complete - moving to video section");
-        setShowVideoSection(true);
-        setVideoStage("preview");
-        setIsProcessingResponse(false);
-        speakText(
-          "Great! Now we'll record two short videos for your medical assessment. First, I'll show you a camera preview.",
-          false
-        );
-        return currentIndex;
-      }
-    });
+    }
   };
 
   // Process captured speech and save response
   const processCapturedSpeech = (finalTranscript: string) => {
-    // Prevent duplicate processing
-    if (isProcessingResponse) {
-      console.log("🚫 Already processing response - ignoring duplicate");
-      return;
-    }
-
-    console.log("💾 Processing captured speech:", finalTranscript);
-    setIsProcessingResponse(true);
-
-    // Clear ALL timers immediately to prevent race conditions
-    clearAllTimers();
-
-    if (!finalTranscript.trim() || finalTranscript.trim().length < 1) {
-      console.log("❌ Speech too short, moving to next question");
-      moveToNextQuestion();
-      return;
-    }
-
-    // Get current question directly from state
-    const currentQuestion = triageQuestions[currentQuestionIndex];
-    console.log(
-      `💾 Attempting to save response for question ${
-        currentQuestion.id
-      } (index ${currentQuestionIndex}): "${finalTranscript.trim()}"`
-    );
+    console.log(`💾 Processing speech: "${finalTranscript}" for question ${currentQuestionIndex + 1}`);
     
-    // Save the response directly
-    setResponses((prev) => {
-      console.log(`📋 Current responses before update:`, prev);
-      
-      // Don't overwrite if response already exists for this question
-      if (prev[currentQuestion.id]) {
-        console.log(
-          `⚠️ Response already exists for question ${currentQuestion.id} - not overwriting`
-        );
-        return prev;
-      }
+    if (!finalTranscript.trim()) {
+      console.log("❌ Empty speech, moving to next question");
+      setTimeout(() => moveToNextQuestion(), 500);
+      return;
+    }
 
-      const newResponses = {
+    // Get current question and save response
+    const currentQuestion = triageQuestions[currentQuestionIndex];
+    const responseText = finalTranscript.trim();
+    
+    console.log(`💾 Saving "${responseText}" to question ${currentQuestion.id}`);
+
+    setResponses((prev) => {
+      const updated = {
         ...prev,
-        [currentQuestion.id]: finalTranscript.trim(),
+        [currentQuestion.id]: responseText,
       };
-      console.log(`✅ Successfully saved responses:`, newResponses);
-      console.log(`📝 Specifically saved for question ${currentQuestion.id}: "${finalTranscript.trim()}"`);
-      return newResponses;
+      console.log(`✅ Updated responses:`, updated);
+      return updated;
     });
 
-    console.log(
-      `✅ Saved response for question ${
-        currentQuestion.id
-      }: "${finalTranscript.trim()}"`
-    );
-
-    // Move to next question
-    moveToNextQuestion();
+    // Move to next question after a short delay to ensure response is saved
+    setTimeout(() => {
+      moveToNextQuestion();
+    }, 500);
   };
 
   const speakText = async (
@@ -508,17 +449,16 @@ export function EDDashboard({ onPatientAdd }: EDDashboardProps) {
     }
   };
 
-  // New clean speech recognition function
+  // Speech recognition with proper timing
   const startSpeechRecognition = async () => {
-    console.log("🚀 ULTRA SIMPLE SPEECH RECOGNITION START");
-    
+    console.log("🚀 Starting speech recognition with proper timing");
+
     // Clear any existing recognition
     if (recognitionRef.current) {
       recognitionRef.current.stop();
       recognitionRef.current = null;
     }
 
-    // Basic check
     if (isSpeaking) {
       console.log("🚫 AI is speaking - cannot start");
       return;
@@ -527,71 +467,93 @@ export function EDDashboard({ onPatientAdd }: EDDashboardProps) {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
       console.log("❌ No speech recognition support");
+      moveToNextQuestion();
       return;
     }
 
     const recognition = new SpeechRecognition();
-    recognition.continuous = false; // Single utterance only
+    recognition.continuous = true; // Keep listening for up to 5 seconds
     recognition.interimResults = true;
     recognition.lang = "en-US";
 
-    let finalResult = "";
+    let finalTranscript = "";
+    let hasSpokenYet = false;
+    let silenceTimer = null;
 
     recognition.onstart = () => {
-      console.log("🎤 RECOGNITION STARTED");
+      console.log("🎤 Started listening - 5 second timeout active");
       setIsListening(true);
       setListeningPhase("listening");
     };
 
     recognition.onresult = (event) => {
-      console.log(`📥 Got speech result (${event.results.length} results)`);
+      let interimTranscript = "";
       
-      let fullText = "";
       for (let i = 0; i < event.results.length; i++) {
-        const text = event.results[i][0].transcript;
-        fullText += text;
+        const transcript = event.results[i][0].transcript;
         if (event.results[i].isFinal) {
-          finalResult = fullText;
-          console.log(`✅ FINAL RESULT: "${finalResult}"`);
+          finalTranscript += transcript;
+          console.log(`✅ Final: "${transcript}"`);
+        } else {
+          interimTranscript += transcript;
         }
       }
+
+      // Display current text
+      setTranscript(finalTranscript + interimTranscript);
       
-      setTranscript(fullText);
-      console.log(`📺 Display text: "${fullText}"`);
+      // If we heard something, mark that speech was detected
+      if ((finalTranscript + interimTranscript).trim()) {
+        hasSpokenYet = true;
+        
+        // Clear existing silence timer
+        if (silenceTimer) {
+          clearTimeout(silenceTimer);
+        }
+        
+        // Start new 2-second silence timer
+        silenceTimer = setTimeout(() => {
+          console.log("⏰ 2 seconds of silence detected - processing speech");
+          recognition.stop();
+        }, 2000);
+      }
     };
 
     recognition.onend = () => {
-      console.log(`🛑 RECOGNITION ENDED with result: "${finalResult}"`);
+      console.log(`🛑 Recognition ended. Final: "${finalTranscript}", HasSpoken: ${hasSpokenYet}`);
       setIsListening(false);
-      setListeningPhase("processing");
+      setListeningPhase("idle");
       
-      if (finalResult.trim()) {
-        console.log(`🎯 PROCESSING: "${finalResult}"`);
-        // Use the existing processCapturedSpeech function to maintain compatibility
-        processCapturedSpeech(finalResult.trim());
+      if (silenceTimer) {
+        clearTimeout(silenceTimer);
+        silenceTimer = null;
+      }
+
+      if (hasSpokenYet && finalTranscript.trim()) {
+        console.log(`🎯 Processing captured speech: "${finalTranscript}"`);
+        processCapturedSpeech(finalTranscript.trim());
       } else {
-        console.log("❌ No speech captured - skipping to next question");
-        setTimeout(() => {
-          moveToNextQuestion();
-        }, 1000);
+        console.log("❌ No speech detected, moving to next question");
+        moveToNextQuestion();
       }
     };
 
     recognition.onerror = (event) => {
-      console.error(`❌ Speech error: ${event.error}`);
+      console.error(`❌ Speech recognition error: ${event.error}`);
       setIsListening(false);
-      setTimeout(() => {
-        moveToNextQuestion();
-      }, 1000);
+      if (silenceTimer) {
+        clearTimeout(silenceTimer);
+      }
+      moveToNextQuestion();
     };
 
     recognitionRef.current = recognition;
     recognition.start();
-    
-    // Auto stop after 5 seconds
+
+    // 5-second max timeout
     setTimeout(() => {
       if (recognitionRef.current === recognition) {
-        console.log("⏰ Auto-stopping recognition after 5 seconds");
+        console.log("⏰ 5-second timeout reached - stopping recognition");
         recognition.stop();
       }
     }, 5000);
@@ -967,7 +929,7 @@ export function EDDashboard({ onPatientAdd }: EDDashboardProps) {
                           </h3>
                         </div>
                       </div>
-                      
+
                       <p className="text-xl text-gray-600 mb-8 text-center">
                         We'll record two short videos: one of your face and one
                         of your full body for medical assessment
@@ -987,21 +949,21 @@ export function EDDashboard({ onPatientAdd }: EDDashboardProps) {
 
                         <div className="space-y-4">
                           <Button
-                          onClick={() => {
-                            setShowPreview(true);
-                            setVideoStage("face");
-                            speakText(
-                              "Now we'll record a video of your face. Please look directly at the camera.",
-                              false,
-                              "face"
-                            );
-                          }}
-                          size="lg"
-                          className="text-xl py-4 px-8 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800"
-                        >
-                          <Video className="h-6 w-6 mr-3" />
-                          Start Video Assessment
-                        </Button>
+                            onClick={() => {
+                              setShowPreview(true);
+                              setVideoStage("face");
+                              speakText(
+                                "Now we'll record a video of your face. Please look directly at the camera.",
+                                false,
+                                "face"
+                              );
+                            }}
+                            size="lg"
+                            className="text-xl py-4 px-8 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800"
+                          >
+                            <Video className="h-6 w-6 mr-3" />
+                            Start Video Assessment
+                          </Button>
                         </div>
                       </div>
                     </>
@@ -1328,9 +1290,11 @@ export function EDDashboard({ onPatientAdd }: EDDashboardProps) {
                   const response = responses[question.id];
                   const isActive = index === currentQuestionIndex;
                   const isCompleted = !!response;
-                  
+
                   // Debug logging
-                  console.log(`🎯 Progress Display - Question ${question.id} ("${question.question}"): response="${response}", isCompleted=${isCompleted}`);
+                  console.log(
+                    `🎯 Progress Display - Question ${question.id} ("${question.question}"): response="${response}", isCompleted=${isCompleted}`
+                  );
                   console.log(`🗂️ All responses currently:`, responses);
 
                   return (
