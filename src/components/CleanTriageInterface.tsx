@@ -658,9 +658,6 @@ export function CleanTriageInterface({ onPatientAdd }: CleanTriageInterfaceProps
               <p className="text-xl text-gray-600 mt-4">
                 Simplified Voice-Enabled Triage Assessment
               </p>
-              <p className="text-sm text-gray-500 mt-2">
-                Backend Status: {isConnected ? "✅ Connected" : "❌ Disconnected"}
-              </p>
             </CardHeader>
             <CardContent className="text-center space-y-8">
               <Button
@@ -673,7 +670,7 @@ export function CleanTriageInterface({ onPatientAdd }: CleanTriageInterfaceProps
                 Start Triage
               </Button>
               <div className="text-sm text-gray-500">
-                Backend handles all validation and question flow automatically.
+                Please speak clearly and follow the voice prompts.
               </div>
             </CardContent>
           </Card>

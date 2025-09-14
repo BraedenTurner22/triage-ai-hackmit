@@ -11,24 +11,17 @@ const TriageAnalysis = () => {
       console.log("🏥 Received patient data for database save:", patientInfo);
 
       // Convert the patient info to the proper Patient format
-      const patientData: Partial<Patient> = {
+      const now = new Date();
+      const patientData = {
         name: patientInfo.name || 'Unknown Patient',
         age: parseInt(patientInfo.age) || 0,
         gender: patientInfo.gender || 'Other',
-        arrivalTime: new Date(),
-        triageLevel: patientInfo.triage_level || 3,
-        chiefComplaint: patientInfo.symptoms || 'No symptoms provided',
-        vitals: {
-          heartRate: 80, // Default - could be enhanced later
-          respiratoryRate: 16, // Default - could be enhanced later
-          painLevel: patientInfo.pain_assessment?.medical_pain_level || 1
-        },
-        painAssessment: patientInfo.pain_assessment || null,
-        allergies: [],
-        medications: [],
-        medicalHistory: [],
-        notes: `Triage completed via AI system. Patient ID: ${patientInfo.patient_id || 'N/A'}`,
-        status: 'waiting'
+        arrival: now.toISOString(), // Use ISO string for database storage
+        triage_level: patientInfo.triage_level || 3,
+        patient_summary: patientInfo.symptoms || 'No symptoms provided',
+        heart_rate: patientInfo.vitals?.heartRate || 0,
+        respiratory_rate: patientInfo.vitals?.respiratoryRate || 0,
+        pain_level: patientInfo.pain_assessment?.medical_pain_level || 1
       };
 
       console.log("🏥 Formatted patient data for Supabase:", patientData);
@@ -36,7 +29,7 @@ const TriageAnalysis = () => {
       // Save to Supabase
       const { data, error } = await supabase
         .from('patients')
-        .insert([patientData])
+        .insert(patientData)
         .select();
 
       if (error) {
@@ -49,9 +42,10 @@ const TriageAnalysis = () => {
       const patientName = patientInfo.name || 'Patient';
       const patientAge = patientInfo.age || 'Unknown age';
       const triageLevel = patientInfo.triage_level || 'Unknown priority';
-      const painLevel = patientInfo.pain_assessment?.medical_pain_level || 'No pain data';
+      const heartRate = patientInfo.vitals?.heartRate || 0;
+      const respiratoryRate = patientInfo.vitals?.respiratoryRate || 0;
 
-      toast.success(`${patientName} (${patientAge}) added to queue with priority ${triageLevel} and pain level ${painLevel}/10`);
+      toast.success(`${patientName} (${patientAge}) added to queue with priority ${triageLevel}. Vitals: HR ${heartRate}, RR ${respiratoryRate}`);
 
       // Log the pain assessment data specifically
       if (patientInfo.pain_assessment) {
