@@ -8,20 +8,61 @@ import { toast } from "sonner";
 const TriageAnalysis = () => {
   const handlePatientAdd = async (patientInfo: any) => {
     try {
-      // The backend smart triage system already adds the patient to Supabase
-      // This handler just shows a success message and could trigger dashboard updates
+      console.log("🏥 Received patient data for database save:", patientInfo);
+
+      // Convert the patient info to the proper Patient format
+      const patientData: Partial<Patient> = {
+        name: patientInfo.name || 'Unknown Patient',
+        age: parseInt(patientInfo.age) || 0,
+        gender: patientInfo.gender || 'Other',
+        arrivalTime: new Date(),
+        triageLevel: patientInfo.triage_level || 3,
+        chiefComplaint: patientInfo.symptoms || 'No symptoms provided',
+        vitals: {
+          heartRate: 80, // Default - could be enhanced later
+          respiratoryRate: 16, // Default - could be enhanced later
+          painLevel: patientInfo.pain_assessment?.medical_pain_level || 1
+        },
+        painAssessment: patientInfo.pain_assessment || null,
+        allergies: [],
+        medications: [],
+        medicalHistory: [],
+        notes: `Triage completed via AI system. Patient ID: ${patientInfo.patient_id || 'N/A'}`,
+        status: 'waiting'
+      };
+
+      console.log("🏥 Formatted patient data for Supabase:", patientData);
+
+      // Save to Supabase
+      const { data, error } = await supabase
+        .from('patients')
+        .insert([patientData])
+        .select();
+
+      if (error) {
+        console.error("❌ Supabase error:", error);
+        throw error;
+      }
+
+      console.log("✅ Patient successfully saved to database:", data);
+
       const patientName = patientInfo.name || 'Patient';
       const patientAge = patientInfo.age || 'Unknown age';
       const triageLevel = patientInfo.triage_level || 'Unknown priority';
+      const painLevel = patientInfo.pain_assessment?.medical_pain_level || 'No pain data';
 
-      toast.success(`${patientName} (${patientAge}) added to queue with priority level ${triageLevel}`);
+      toast.success(`${patientName} (${patientAge}) added to queue with priority ${triageLevel} and pain level ${painLevel}/10`);
 
-      // Optional: trigger a dashboard refresh or real-time update here
-      console.log("Smart triage patient added:", patientInfo);
+      // Log the pain assessment data specifically
+      if (patientInfo.pain_assessment) {
+        console.log("💊 Pain assessment data saved:", patientInfo.pain_assessment);
+      } else {
+        console.warn("⚠️ No pain assessment data received from CleanTriageInterface");
+      }
 
     } catch (error) {
-      console.error("Error handling patient add:", error);
-      toast.error("Error processing patient information");
+      console.error("❌ Error saving patient to database:", error);
+      toast.error("Error saving patient information to database");
     }
   };
 
