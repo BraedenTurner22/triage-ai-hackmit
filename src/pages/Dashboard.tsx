@@ -51,7 +51,7 @@ const Dashboard = () => {
   const [displayedPlan, setDisplayedPlan] = useState<string>("");
   const [isTyping, setIsTyping] = useState(false);
   const [isGeneratingRef, setIsGeneratingRef] = useState(false);
-  
+
   const openAIRef = useRef<OpenAI | null>(null);
   const typewriterTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastGenerationRef = useRef<string>("");
@@ -162,16 +162,22 @@ const Dashboard = () => {
   // Generate AI management plan
   const generateAIPlan = async (patientData: Patient[]) => {
     // Prevent duplicate calls
-    const patientKey = JSON.stringify(patientData.map(p => ({ id: p.id, name: p.name, triageLevel: p.triageLevel })));
+    const patientKey = JSON.stringify(
+      patientData.map((p) => ({
+        id: p.id,
+        name: p.name,
+        triageLevel: p.triageLevel,
+      }))
+    );
     if (isGeneratingRef || lastGenerationRef.current === patientKey) {
       console.log("🚫 Skipping duplicate AI generation");
       return;
     }
-    
+
     console.log("🚀 Starting NEW AI generation");
     setIsGeneratingRef(true);
     lastGenerationRef.current = patientKey;
-    
+
     if (!openAIRef.current) {
       console.error("OpenAI not initialized");
       setIsGeneratingRef(false);
@@ -181,7 +187,7 @@ const Dashboard = () => {
     setIsGeneratingPlan(true);
     setDisplayedPlan("");
     setIsTyping(false);
-    
+
     // Clear any existing typewriter
     if (typewriterTimeoutRef.current) {
       clearTimeout(typewriterTimeoutRef.current);
@@ -190,25 +196,41 @@ const Dashboard = () => {
 
     try {
       // Create prompt based on current patient data
-      const waitingPatients = patientData.filter(p => p.status === "waiting");
-      const criticalCount = waitingPatients.filter(p => p.triageLevel === 1).length;
-      const emergentCount = waitingPatients.filter(p => p.triageLevel === 2).length;
-      const urgentCount = waitingPatients.filter(p => p.triageLevel === 3).length;
-      const minorCount = waitingPatients.filter(p => p.triageLevel === 4 || p.triageLevel === 5).length;
+      const waitingPatients = patientData.filter((p) => p.status === "waiting");
+      const criticalCount = waitingPatients.filter(
+        (p) => p.triageLevel === 1
+      ).length;
+      const emergentCount = waitingPatients.filter(
+        (p) => p.triageLevel === 2
+      ).length;
+      const urgentCount = waitingPatients.filter(
+        (p) => p.triageLevel === 3
+      ).length;
+      const minorCount = waitingPatients.filter(
+        (p) => p.triageLevel === 4 || p.triageLevel === 5
+      ).length;
       const totalWaiting = waitingPatients.length;
-      
-      const avgWaitTime = waitingPatients.length > 0
-        ? waitingPatients.reduce((acc, p) => {
-            const waitMinutes = (Date.now() - p.arrivalTime.getTime()) / (1000 * 60);
-            return acc + waitMinutes;
-          }, 0) / waitingPatients.length
-        : 0;
+
+      const avgWaitTime =
+        waitingPatients.length > 0
+          ? waitingPatients.reduce((acc, p) => {
+              const waitMinutes =
+                (Date.now() - p.arrivalTime.getTime()) / (1000 * 60);
+              return acc + waitMinutes;
+            }, 0) / waitingPatients.length
+          : 0;
 
       // Get patient names by triage level for personalized recommendations
-      const criticalPatients = waitingPatients.filter(p => p.triageLevel === 1);
-      const emergentPatients = waitingPatients.filter(p => p.triageLevel === 2);
-      const urgentPatients = waitingPatients.filter(p => p.triageLevel === 3);
-      const minorPatients = waitingPatients.filter(p => p.triageLevel === 4 || p.triageLevel === 5);
+      const criticalPatients = waitingPatients.filter(
+        (p) => p.triageLevel === 1
+      );
+      const emergentPatients = waitingPatients.filter(
+        (p) => p.triageLevel === 2
+      );
+      const urgentPatients = waitingPatients.filter((p) => p.triageLevel === 3);
+      const minorPatients = waitingPatients.filter(
+        (p) => p.triageLevel === 4 || p.triageLevel === 5
+      );
 
       const prompt = `You are an experienced emergency department triage coordinator. Provide a clear, professional 4-5 sentence management plan based on current patient data.
 
@@ -217,16 +239,16 @@ Total waiting: ${totalWaiting} patients
 Average wait time: ${Math.round(avgWaitTime)} minutes
 
 CRITICAL PATIENTS (Level 1) - ${criticalCount} patients:
-${criticalPatients.map(p => `• ${p.name} (${p.chiefComplaint})`).join('\n')}
+${criticalPatients.map((p) => `• ${p.name} (${p.chiefComplaint})`).join("\n")}
 
 EMERGENT PATIENTS (Level 2) - ${emergentCount} patients:  
-${emergentPatients.map(p => `• ${p.name} (${p.chiefComplaint})`).join('\n')}
+${emergentPatients.map((p) => `• ${p.name} (${p.chiefComplaint})`).join("\n")}
 
 URGENT PATIENTS (Level 3) - ${urgentCount} patients:
-${urgentPatients.map(p => `• ${p.name} (${p.chiefComplaint})`).join('\n')}
+${urgentPatients.map((p) => `• ${p.name} (${p.chiefComplaint})`).join("\n")}
 
 MINOR PATIENTS (Level 4-5) - ${minorCount} patients:
-${minorPatients.map(p => `• ${p.name} (${p.chiefComplaint})`).join('\n')}
+${minorPatients.map((p) => `• ${p.name} (${p.chiefComplaint})`).join("\n")}
 
 INSTRUCTIONS:
 - Reference specific patient names when making recommendations
@@ -242,13 +264,14 @@ Management Plan:`;
         model: "gpt-4-turbo-preview",
         messages: [
           {
-            role: "system", 
-            content: "You are a professional emergency department triage coordinator. Provide clear, accurate, and actionable management plans. Always use perfect spelling and grammar. Reference patients by name when making specific recommendations. Pay special attention to spelling common words correctly, especially at the beginning of sentences (e.g., 'Firstly', 'Immediately', 'Prioritize')."
+            role: "system",
+            content:
+              "You are a professional emergency department triage coordinator. Provide clear, accurate, and actionable management plans. Always use perfect spelling and grammar. Reference patients by name when making specific recommendations. Pay special attention to spelling common words correctly, especially at the beginning of sentences (e.g., 'Firstly', 'Immediately', 'Prioritize').",
           },
           {
-            role: "user", 
-            content: prompt
-          }
+            role: "user",
+            content: prompt,
+          },
         ],
         max_tokens: 400,
         temperature: 0.1, // Very low temperature to reduce randomness
@@ -257,24 +280,32 @@ Management Plan:`;
         presence_penalty: 0.0,
       });
 
-      let generatedPlan = response.choices[0]?.message?.content || "Unable to generate AI plan at this time.";
-      
+      let generatedPlan =
+        response.choices[0]?.message?.content ||
+        "Unable to generate AI plan at this time.";
+
       // Clean up the response
       generatedPlan = generatedPlan.trim();
-      
+
       // Apply the cleaning function
-      console.log("🔥 BEFORE cleanFirstWord:", JSON.stringify(generatedPlan.substring(0, 20)));
+      console.log(
+        "🔥 BEFORE cleanFirstWord:",
+        JSON.stringify(generatedPlan.substring(0, 20))
+      );
       generatedPlan = cleanFirstWord(generatedPlan);
-      console.log("🔥 AFTER cleanFirstWord:", JSON.stringify(generatedPlan.substring(0, 20)));
-      
+      console.log(
+        "🔥 AFTER cleanFirstWord:",
+        JSON.stringify(generatedPlan.substring(0, 20))
+      );
+
       setAiPlan(generatedPlan);
-      
+
       // Start typewriter effect
       startTypewriterEffect(generatedPlan);
-      
     } catch (error) {
       console.error("Error generating AI plan:", error);
-      const fallbackPlan = "AI analysis temporarily unavailable. Please prioritize critical patients and monitor queue capacity.";
+      const fallbackPlan =
+        "AI analysis temporarily unavailable. Please prioritize critical patients and monitor queue capacity.";
       setAiPlan(fallbackPlan);
       startTypewriterEffect(fallbackPlan);
     } finally {
@@ -308,32 +339,35 @@ Management Plan:`;
       clearTimeout(typewriterTimeoutRef.current);
       typewriterTimeoutRef.current = null;
     }
-    
+
     // AGGRESSIVELY clean the text multiple times
     let cleanedText = text.trim();
     cleanedText = cleanedText.replace(/^[^A-Za-z]+/, ""); // Remove leading non-letters
     cleanedText = cleanedText.replace(/^([A-Za-z])\1+/, "$1"); // Fix duplicates
     cleanedText = cleanedText.replace(/^([A-Za-z])\1+/, "$1"); // Apply twice for safety
     cleanedText = cleanedText.replace(/^([A-Za-z])\1+/, "$1"); // Apply third time
-    
+
     // Ensure first letter is capitalized
     if (cleanedText.length > 0) {
       cleanedText = cleanedText.charAt(0).toUpperCase() + cleanedText.slice(1);
     }
-    
-    console.log("🎭 FINAL CLEANED TEXT:", JSON.stringify(cleanedText.substring(0, 50)));
-    
+
+    console.log(
+      "🎭 FINAL CLEANED TEXT:",
+      JSON.stringify(cleanedText.substring(0, 50))
+    );
+
     // Set the entire text at once instead of character by character
     setDisplayedPlan(cleanedText);
     setIsTyping(false);
-    
+
     // Still do typewriter effect but without state corruption risk
     setDisplayedPlan("");
     setIsTyping(true);
-    
+
     let index = 0;
     const typeSpeed = 30;
-    
+
     const typeNextCharacter = () => {
       if (index < cleanedText.length) {
         const nextChar = cleanedText[index];
@@ -345,7 +379,7 @@ Management Plan:`;
         typewriterTimeoutRef.current = null;
       }
     };
-    
+
     typeNextCharacter();
   };
 
@@ -696,7 +730,7 @@ Management Plan:`;
                                     Patient Wait Times
                                   </h4>
                                   <span className="text-sm text-muted-foreground">
-                                    (sorted by wait time)
+                                    (sorted in increasing order)
                                   </span>
                                 </div>
                                 {stats.waitTimeData.length > 0 ? (
@@ -795,8 +829,20 @@ Management Plan:`;
                               </div>
                               <div className="mt-4 flex items-center justify-between text-sm text-blue-600">
                                 <span className="flex items-center gap-1">
-                                  <div className={`w-2 h-2 rounded-full ${isGeneratingPlan ? 'bg-yellow-500 animate-pulse' : isTyping ? 'bg-blue-500 animate-pulse' : 'bg-green-500 animate-pulse'}`}></div>
-                                  {isGeneratingPlan ? 'Generating AI Analysis...' : isTyping ? 'AI Analysis Updating...' : 'AI Analysis Complete'}
+                                  <div
+                                    className={`w-2 h-2 rounded-full ${
+                                      isGeneratingPlan
+                                        ? "bg-yellow-500 animate-pulse"
+                                        : isTyping
+                                        ? "bg-blue-500 animate-pulse"
+                                        : "bg-green-500 animate-pulse"
+                                    }`}
+                                  ></div>
+                                  {isGeneratingPlan
+                                    ? "Generating AI Analysis..."
+                                    : isTyping
+                                    ? "AI Analysis Updating..."
+                                    : "AI Analysis Complete"}
                                 </span>
                                 <span>{new Date().toLocaleTimeString()}</span>
                               </div>
