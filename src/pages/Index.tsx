@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import {
@@ -29,6 +30,7 @@ const Index = () => {
   const [password, setPassword] = useState("");
   const [passwordError, setPasswordError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
 
   // Fetch patients from Supabase
   useEffect(() => {
@@ -36,13 +38,13 @@ const Index = () => {
 
     // Set up realtime subscription
     const channel = supabase
-      .channel('schema-db-changes')
+      .channel("schema-db-changes")
       .on(
-        'postgres_changes',
+        "postgres_changes",
         {
-          event: '*',
-          schema: 'public',
-          table: 'patients'
+          event: "*",
+          schema: "public",
+          table: "patients",
         },
         () => {
           fetchPatients();
@@ -57,45 +59,48 @@ const Index = () => {
 
   const fetchPatients = async () => {
     try {
+      setFetchError(null); // Clear any previous errors
       const { data, error } = await supabase
-        .from('patients')
-        .select('*')
-        .order('triage_level', { ascending: true })
-        .order('arrival', { ascending: true });
+        .from("patients")
+        .select("*")
+        .order("triage_level", { ascending: true })
+        .order("arrival", { ascending: true });
 
       if (error) throw error;
 
       // Transform database records to Patient type
-      const transformedPatients: Patient[] = (data || []).map(record => ({
+      const transformedPatients: Patient[] = (data || []).map((record) => ({
         id: record.id,
         name: record.name,
         age: record.age,
-        gender: record.gender as 'Male' | 'Female' | 'Other',
+        gender: record.gender as "Male" | "Female" | "Other",
         arrivalTime: new Date(record.arrival),
         triageLevel: record.triage_level as 1 | 2 | 3 | 4 | 5,
-        chiefComplaint: record.patient_summary || 'No summary available',
+        chiefComplaint: record.patient_summary || "No summary available",
         vitals: {
           heartRate: record.heart_rate,
           bloodPressure: {
             systolic: 120, // Default values since not in DB
-            diastolic: 80
+            diastolic: 80,
           },
           respiratoryRate: record.respiratory_rate,
           temperature: 98.6, // Default value
-          oxygenSaturation: 98 // Default value
+          oxygenSaturation: 98, // Default value
         },
         allergies: [],
         medications: [],
         medicalHistory: [],
-        notes: '',
-        aiSummary: record.patient_summary || '',
-        status: 'waiting' as const
+        notes: "",
+        aiSummary: record.patient_summary || "",
+        status: "waiting" as const,
       }));
 
       setPatients(transformedPatients);
     } catch (error) {
-      console.error('Error fetching patients:', error);
-      toast.error('Failed to load patients');
+      console.error("Error fetching patients:", error);
+      setFetchError(
+        "Failed to load patients from the database. Please check your connection and try again."
+      );
     } finally {
       setLoading(false);
     }
@@ -103,7 +108,7 @@ const Index = () => {
 
   const handlePatientAdd = async (newPatient: Patient) => {
     try {
-      const { error } = await supabase.from('patients').insert({
+      const { error } = await supabase.from("patients").insert({
         name: newPatient.name,
         age: newPatient.age,
         gender: newPatient.gender,
@@ -111,16 +116,16 @@ const Index = () => {
         patient_summary: newPatient.aiSummary || newPatient.chiefComplaint,
         triage_level: newPatient.triageLevel,
         heart_rate: newPatient.vitals.heartRate,
-        respiratory_rate: newPatient.vitals.respiratoryRate
+        respiratory_rate: newPatient.vitals.respiratoryRate,
       });
 
       if (error) throw error;
-      
-      toast.success('Patient added successfully');
+
+      toast.success("Patient added successfully");
       fetchPatients(); // Refresh the list
     } catch (error) {
-      console.error('Error adding patient:', error);
-      toast.error('Failed to add patient');
+      console.error("Error adding patient:", error);
+      toast.error("Failed to add patient");
     }
   };
 
@@ -136,21 +141,21 @@ const Index = () => {
   const handlePatientRemove = async (patientId: string) => {
     try {
       const { error } = await supabase
-        .from('patients')
+        .from("patients")
         .delete()
-        .eq('id', patientId);
+        .eq("id", patientId);
 
       if (error) throw error;
 
-      toast.success('Patient removed from queue');
+      toast.success("Patient removed from queue");
       // Clear selection if the removed patient was selected
       if (selectedPatient?.id === patientId) {
         setSelectedPatient(null);
       }
       fetchPatients(); // Refresh the list
     } catch (error) {
-      console.error('Error removing patient:', error);
-      toast.error('Failed to remove patient');
+      console.error("Error removing patient:", error);
+      toast.error("Failed to remove patient");
     }
   };
 
@@ -208,17 +213,32 @@ const Index = () => {
   }, [patients]);
 
   return (
-    <div
-      className={`min-h-screen ${
-        currentView === "triage"
-          ? "bg-gradient-to-br from-red-50/30 via-white to-red-50/30"
-          : "bg-gradient-to-br from-background via-background to-primary/5"
-      }`}
-    >
+    <div className="min-h-screen relative">
+      {/* Universal Background */}
+      <div className="fixed inset-0 -z-10">
+        <div className="absolute inset-0 bg-gradient-to-br from-red-50 via-pink-50 to-red-100"></div>
+        <div
+          className="absolute inset-0 opacity-40"
+          style={{
+            backgroundImage: `radial-gradient(circle, #dc2626 1px, transparent 1px)`,
+            backgroundSize: "30px 30px",
+          }}
+        ></div>
+        <div
+          className="absolute inset-0"
+          style={{
+            background: `linear-gradient(135deg, rgba(239, 68, 68, 0.05) 0%, rgba(239, 68, 68, 0.02) 30%, transparent 70%, transparent 100%)`,
+          }}
+        ></div>
+      </div>
+
       {/* Header */}
-      <header className="bg-red-100 text-red-900 shadow-2xl">
+      <header className="bg-white text-red-900 shadow-2xl">
         <div className="container mx-auto px-4 py-6">
-          <div className="flex items-center gap-3">
+          <div
+            className="flex items-center gap-3 cursor-pointer hover:opacity-80 transition-opacity duration-200 w-fit"
+            onClick={() => setCurrentView("home")}
+          >
             <Activity className="w-10 h-10 animate-pulse" />
             <div>
               <h1 className="text-3xl font-bold tracking-tight">TriageAI</h1>
@@ -229,30 +249,20 @@ const Index = () => {
 
       {/* Main Content */}
       <div className="container mx-auto px-4 py-6 relative">
-        {/* Full Background Gradient for Home */}
         {currentView === "home" && (
-          <div className="fixed inset-0 bg-gradient-to-br from-red-50 via-pink-50 to-red-100 -z-10"></div>
-        )}
-
-        {currentView === "home" && (
-          <div className="flex flex-col items-center justify-center min-h-[70vh] space-y-8 relative">
+          <div className="flex flex-col items-center justify-center min-h-[70vh] relative">
             {/* Content */}
-            <div className="relative z-10 text-center space-y-6">
+            <div className="relative z-10 text-center space-y-6 mt-8">
               <div className="space-y-2">
-                <h1 className="text-5xl font-bold text-red-900">
-                  Welcome to TriageAI
-                </h1>
-                <p className="text-2xl font-semibold text-red-800">
+                <h1 className="text-6xl font-bold text-red-900 italic animate-in fade-in slide-in-from-bottom-8 duration-1000 ease-out">
                   Lightning-Fast Emergency Care
-                </p>
+                </h1>
               </div>
-              <p className="text-lg text-red-700 max-w-2xl mx-auto">
-                AI-powered triage system that instantly prioritizes patients and
-                streamlines emergency department workflows for faster, more
-                efficient care.
+              <p className="text-lg text-red-700 max-w-2xl mx-auto animate-in fade-in slide-in-from-bottom-8 duration-1000 ease-out mb-0">
+                Minimize patient wait times without compromising on quality.
               </p>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 w-full max-w-4xl relative z-10">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8 w-full max-w-6xl relative z-10 items-center -mt-24">
               {/* Nurse Dashboard Card */}
               <Card
                 className="h-80 cursor-pointer transition-all duration-300 hover:shadow-2xl hover:scale-105 bg-gradient-to-br from-blue-50 to-blue-100 border-2 border-blue-200 hover:border-blue-300"
@@ -271,6 +281,15 @@ const Index = () => {
                   </p>
                 </CardContent>
               </Card>
+
+              {/* Nurse Image */}
+              <div className="flex justify-center mt-8">
+                <img
+                  src="/nurse.png"
+                  alt="Professional nurse"
+                  className="max-w-full h-auto max-h-120 object-contain drop-shadow-lg opacity-80"
+                />
+              </div>
 
               {/* Triage Analysis Card */}
               <Card
@@ -303,7 +322,7 @@ const Index = () => {
                 ← Back to Home
               </button>
             </div>
-            
+
             {loading ? (
               <div className="flex items-center justify-center min-h-[400px]">
                 <div className="text-center space-y-3">
@@ -314,134 +333,144 @@ const Index = () => {
             ) : (
               <>
                 {/* Stats Cards */}
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
-              <Card className="bg-gradient-to-br from-status-critical/10 to-status-critical/5 border-status-critical/20 hover:shadow-lg transition-all duration-300">
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-muted-foreground">
-                        Critical
-                      </p>
-                      <p className="text-3xl font-bold text-status-critical">
-                        {stats.criticalCount}
-                      </p>
-                    </div>
-                    <AlertTriangle className="w-8 h-8 text-status-critical/50" />
-                  </div>
-                </CardContent>
-              </Card>
+                <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+                  <Card className="bg-gradient-to-br from-status-critical/10 to-status-critical/5 border-status-critical/20 hover:shadow-lg transition-all duration-300">
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-medium text-muted-foreground">
+                            Critical
+                          </p>
+                          <p className="text-3xl font-bold text-status-critical">
+                            {stats.criticalCount}
+                          </p>
+                        </div>
+                        <AlertTriangle className="w-8 h-8 text-status-critical/50" />
+                      </div>
+                    </CardContent>
+                  </Card>
 
-              <Card className="bg-gradient-to-br from-status-urgent/10 to-status-urgent/5 border-status-urgent/20 hover:shadow-lg transition-all duration-300">
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-muted-foreground">
-                        Urgent
-                      </p>
-                      <p className="text-3xl font-bold text-status-urgent">
-                        {stats.urgentCount}
-                      </p>
-                    </div>
-                    <Users className="w-8 h-8 text-status-urgent/50" />
-                  </div>
-                </CardContent>
-              </Card>
+                  <Card className="bg-gradient-to-br from-status-urgent/10 to-status-urgent/5 border-status-urgent/20 hover:shadow-lg transition-all duration-300">
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-medium text-muted-foreground">
+                            Urgent
+                          </p>
+                          <p className="text-3xl font-bold text-status-urgent">
+                            {stats.urgentCount}
+                          </p>
+                        </div>
+                        <Users className="w-8 h-8 text-status-urgent/50" />
+                      </div>
+                    </CardContent>
+                  </Card>
 
-              <Card className="bg-gradient-to-br from-primary/10 to-primary/5 border-primary/20 hover:shadow-lg transition-all duration-300">
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-muted-foreground">
-                        Total Waiting
-                      </p>
-                      <p className="text-3xl font-bold text-primary">
-                        {stats.totalWaiting}
-                      </p>
-                    </div>
-                    <UserCheck className="w-8 h-8 text-primary/50" />
-                  </div>
-                </CardContent>
-              </Card>
+                  <Card className="bg-gradient-to-br from-primary/10 to-primary/5 border-primary/20 hover:shadow-lg transition-all duration-300">
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-medium text-muted-foreground">
+                            Total Waiting
+                          </p>
+                          <p className="text-3xl font-bold text-primary">
+                            {stats.totalWaiting}
+                          </p>
+                        </div>
+                        <UserCheck className="w-8 h-8 text-primary/50" />
+                      </div>
+                    </CardContent>
+                  </Card>
 
-              <Card className="bg-gradient-to-br from-secondary/10 to-secondary/5 border-secondary/20 hover:shadow-lg transition-all duration-300">
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-muted-foreground">
-                        Avg Wait
-                      </p>
-                      <p className="text-3xl font-bold text-secondary-foreground">
-                        {stats.avgWaitTime}
-                        <span className="text-lg">min</span>
-                      </p>
-                    </div>
-                    <Clock className="w-8 h-8 text-secondary/50" />
-                  </div>
-                </CardContent>
-              </Card>
+                  <Card className="bg-gradient-to-br from-secondary/10 to-secondary/5 border-secondary/20 hover:shadow-lg transition-all duration-300">
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-medium text-muted-foreground">
+                            Avg Wait
+                          </p>
+                          <p className="text-3xl font-bold text-secondary-foreground">
+                            {stats.avgWaitTime}
+                            <span className="text-lg">min</span>
+                          </p>
+                        </div>
+                        <Clock className="w-8 h-8 text-secondary/50" />
+                      </div>
+                    </CardContent>
+                  </Card>
 
-              <Card className="bg-gradient-to-br from-accent/10 to-accent/5 border-accent/20 hover:shadow-lg transition-all duration-300">
-                <CardContent className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-muted-foreground">
-                        Queue Load
-                      </p>
-                      <p className="text-3xl font-bold text-black">
-                        {stats.queuePercentage}
-                        <span className="text-lg">%</span>
-                      </p>
-                    </div>
-                    <TrendingUp className="w-8 h-8 text-accent/50" />
-                  </div>
-                  <div className="mt-2 w-full bg-muted rounded-full h-2">
-                    <div
-                      className="h-full rounded-full transition-all duration-500"
-                      style={{
-                        width: `${Math.min(stats.queuePercentage, 100)}%`,
-                        backgroundColor: `hsl(${
-                          120 - stats.queuePercentage * 1.2
-                        }, 70%, 50%)`,
-                      }}
+                  <Card className="bg-gradient-to-br from-accent/10 to-accent/5 border-accent/20 hover:shadow-lg transition-all duration-300">
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-medium text-muted-foreground">
+                            Queue Load
+                          </p>
+                          <p className="text-3xl font-bold text-black">
+                            {stats.queuePercentage}
+                            <span className="text-lg">%</span>
+                          </p>
+                        </div>
+                        <TrendingUp className="w-8 h-8 text-accent/50" />
+                      </div>
+                      <div className="mt-2 w-full bg-muted rounded-full h-2">
+                        <div
+                          className="h-full rounded-full transition-all duration-500"
+                          style={{
+                            width: `${Math.min(stats.queuePercentage, 100)}%`,
+                            backgroundColor: `hsl(${
+                              120 - stats.queuePercentage * 1.2
+                            }, 70%, 50%)`,
+                          }}
+                        />
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                <div className="relative flex gap-6 min-h-[600px]">
+                  {/* Patient Queue - Dynamic positioning */}
+                  <div
+                    className={`transition-all duration-500 ease-in-out ${
+                      selectedPatient
+                        ? "w-80 ml-auto" // Move to right, fixed width when patient selected
+                        : "w-full max-w-md mx-auto" // Center position when no patient selected
+                    }`}
+                  >
+                    <PatientQueue
+                      patients={patients}
+                      onPatientSelect={handlePatientSelect}
+                      onPatientRemove={handlePatientRemove}
+                      selectedPatientId={selectedPatient?.id}
                     />
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
 
-            <div className="relative flex gap-6 min-h-[600px]">
-              {/* Patient Queue - Dynamic positioning */}
-              <div
-                className={`transition-all duration-500 ease-in-out ${
-                  selectedPatient
-                    ? "w-80 ml-auto" // Move to right, fixed width when patient selected
-                    : "w-full max-w-md mx-auto" // Center position when no patient selected
-                }`}
-              >
-                <PatientQueue
-                  patients={patients}
-                  onPatientSelect={handlePatientSelect}
-                  onPatientRemove={handlePatientRemove}
-                  selectedPatientId={selectedPatient?.id}
-                />
-              </div>
-
-              {/* Patient Details Portal - Slides in from right */}
-              <div
-                className={`transition-all duration-500 ease-in-out overflow-hidden ${
-                  selectedPatient
-                    ? "flex-1 opacity-100 translate-x-0" // Visible and in position
-                    : "w-0 opacity-0 translate-x-full" // Hidden and off-screen
-                }`}
-              >
-                {selectedPatient && (
-                  <div className="bg-card rounded-lg border border-border shadow-xl w-full">
-                    <PatientDetails patient={selectedPatient} />
+                    {/* Error Alert - Show below patient queue if there's a fetch error */}
+                    {fetchError && (
+                      <Alert className="mt-4 border-red-200 bg-red-50">
+                        <AlertTriangle className="w-4 h-4 text-red-600" />
+                        <AlertDescription className="text-red-800">
+                          {fetchError}
+                        </AlertDescription>
+                      </Alert>
+                    )}
                   </div>
-                )}
-              </div>
-            </div>
-            </>
+
+                  {/* Patient Details Portal - Slides in from right */}
+                  <div
+                    className={`transition-all duration-500 ease-in-out overflow-hidden ${
+                      selectedPatient
+                        ? "flex-1 opacity-100 translate-x-0" // Visible and in position
+                        : "w-0 opacity-0 translate-x-full" // Hidden and off-screen
+                    }`}
+                  >
+                    {selectedPatient && (
+                      <div className="bg-card rounded-lg border border-border shadow-xl w-full">
+                        <PatientDetails patient={selectedPatient} />
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </>
             )}
           </div>
         )}

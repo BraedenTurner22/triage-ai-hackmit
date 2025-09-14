@@ -14,7 +14,7 @@ import {
   Video,
   VideoOff,
 } from "lucide-react";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import OpenAI from "openai";
 
 // Declare Speech Recognition types for TypeScript
 declare global {
@@ -79,93 +79,166 @@ export function EDDashboard({ onPatientAdd }: EDDashboardProps) {
   const [videoAnimating, setVideoAnimating] = useState(false);
   const [aidRequested, setAidRequested] = useState(false);
 
-  const genAIRef = useRef<GoogleGenerativeAI | null>(null);
+  const openAIRef = useRef<OpenAI | null>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
-  const speechSynthesisRef = useRef<SpeechSynthesisUtterance | null>(null);
+  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
   const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const videoCountdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Initialize Google AI with environment variable on mount
+  // Initialize OpenAI with environment variable on mount
   useEffect(() => {
-    const envApiKey = import.meta.env.VITE_GOOGLE_VOICE_API_KEY;
+    const envApiKey = import.meta.env.VITE_OPENAI_VOICE_API_KEY;
     console.log(
       "API Key status:",
       envApiKey ? "Present" : "Missing",
       envApiKey?.substring(0, 10) + "..."
     );
     if (envApiKey && envApiKey !== "your_api_key_here") {
-      initializeGemini(envApiKey);
+      initializeOpenAI(envApiKey);
     } else {
       console.error(
-        "No valid API key found. Please set VITE_GOOGLE_VOICE_API_KEY in your .env file"
+        "No valid API key found. Please set VITE_OPENAI_VOICE_API_KEY in your .env file"
       );
     }
   }, []);
 
-  const initializeGemini = async (apiKey: string) => {
+  const initializeOpenAI = async (apiKey: string) => {
     if (!apiKey.trim()) return;
 
     try {
-      console.log("Initializing Gemini API...");
-      genAIRef.current = new GoogleGenerativeAI(apiKey.trim());
+      console.log("Initializing OpenAI API...");
+      console.log("API Key length:", apiKey.length);
+      console.log("API Key starts with:", apiKey.substring(0, 7));
+
+      openAIRef.current = new OpenAI({
+        apiKey: apiKey.trim(),
+        dangerouslyAllowBrowser: true,
+      });
+
+      // Test the API connection with a simple request
+      console.log("Testing OpenAI API connection...");
+      const testResponse = await openAIRef.current.audio.speech.create({
+        model: "tts-1",
+        voice: "nova",
+        input: "Test",
+        speed: 1.0,
+      });
+
+      // If we get here, the API is working
+      console.log("OpenAI API test successful");
       setIsReady(true);
-      console.log("Gemini API initialized successfully");
+      console.log("OpenAI API initialized successfully");
     } catch (error) {
-      console.error("Failed to initialize Gemini:", error);
+      console.error("Failed to initialize OpenAI:", error);
+      console.error("Error details:", error.message);
+
+      setIsReady(false);
       toast({
         title: "Initialization Failed",
-        description: "Failed to initialize AI. Please check your API key.",
+        description: `Failed to initialize AI: ${error.message}. Please check your API key.`,
         variant: "destructive",
       });
     }
   };
 
-  const speakText = (
+  const speakText = async (
     text: string,
     startCountdownAfter = false,
     startVideoCountdownAfter: "face" | "body" | null = null
   ): Promise<void> => {
-    return new Promise((resolve) => {
-      if (!("speechSynthesis" in window)) {
-        console.error("Speech synthesis not supported");
-        resolve();
+    try {
+      if (!openAIRef.current) {
+        console.error("OpenAI not initialized");
         return;
       }
 
-      // Cancel any ongoing speech
-      speechSynthesis.cancel();
+      setIsSpeaking(true);
+      console.log("AI started speaking:", text);
 
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = 0.9;
-      utterance.pitch = 1;
-      utterance.volume = 0.8;
+      // Call OpenAI TTS API
+      const response = await openAIRef.current.audio.speech.create({
+        model: "tts-1",
+        voice: "nova", // You can change this to "alloy", "echo", "fable", "onyx", "nova", or "shimmer"
+        input: text,
+        speed: 0.9,
+      });
 
-      utterance.onstart = () => {
-        setIsSpeaking(true);
-        console.log("AI started speaking:", text);
-      };
+      // Convert response to audio blob and play it
+      const audioBuffer = await response.arrayBuffer();
+      const audioBlob = new Blob([audioBuffer], { type: "audio/mpeg" });
+      const audioUrl = URL.createObjectURL(audioBlob);
+      const audio = new Audio(audioUrl);
 
-      utterance.onend = () => {
-        setIsSpeaking(false);
-        console.log("AI finished speaking");
-        if (startCountdownAfter) {
-          startCountdownTimer();
-        }
-        if (startVideoCountdownAfter) {
-          startVideoCountdownTimer(startVideoCountdownAfter);
-        }
-        resolve();
-      };
+      // Store reference for cleanup
+      currentAudioRef.current = audio;
 
-      utterance.onerror = (event) => {
-        console.error("Speech synthesis error:", event);
-        setIsSpeaking(false);
-        resolve();
-      };
+      return new Promise((resolve) => {
+        audio.onended = () => {
+          setIsSpeaking(false);
+          console.log("AI finished speaking");
+          URL.revokeObjectURL(audioUrl); // Clean up
+          currentAudioRef.current = null; // Clear reference
 
-      speechSynthesisRef.current = utterance;
-      speechSynthesis.speak(utterance);
-    });
+          if (startCountdownAfter) {
+            startCountdownTimer();
+          }
+          if (startVideoCountdownAfter) {
+            startVideoCountdownTimer(startVideoCountdownAfter);
+          }
+          resolve();
+        };
+
+        audio.onerror = (event) => {
+          console.error("Audio playback error:", event);
+          setIsSpeaking(false);
+          URL.revokeObjectURL(audioUrl); // Clean up
+          currentAudioRef.current = null; // Clear reference
+          resolve();
+        };
+
+        audio.play().catch((error) => {
+          console.error("Failed to play audio:", error);
+          setIsSpeaking(false);
+          URL.revokeObjectURL(audioUrl); // Clean up
+          currentAudioRef.current = null; // Clear reference
+          resolve();
+        });
+      });
+    } catch (error) {
+      console.error("OpenAI TTS error:", error);
+      setIsSpeaking(false);
+
+      // Fallback to browser speech synthesis if OpenAI fails
+      if ("speechSynthesis" in window) {
+        console.log("Falling back to browser speech synthesis");
+        speechSynthesis.cancel();
+
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = 0.9;
+        utterance.pitch = 1;
+        utterance.volume = 0.8;
+
+        return new Promise((resolve) => {
+          utterance.onend = () => {
+            setIsSpeaking(false);
+            if (startCountdownAfter) {
+              startCountdownTimer();
+            }
+            if (startVideoCountdownAfter) {
+              startVideoCountdownTimer(startVideoCountdownAfter);
+            }
+            resolve();
+          };
+
+          utterance.onerror = () => {
+            setIsSpeaking(false);
+            resolve();
+          };
+
+          speechSynthesis.speak(utterance);
+        });
+      }
+    }
   };
 
   const startListening = () => {
@@ -459,7 +532,11 @@ export function EDDashboard({ onPatientAdd }: EDDashboardProps) {
     clearVideoCountdownTimer();
 
     // Stop any ongoing speech
-    if (speechSynthesis.speaking) {
+    if (currentAudioRef.current) {
+      currentAudioRef.current.pause();
+      currentAudioRef.current = null;
+    }
+    if ("speechSynthesis" in window && speechSynthesis.speaking) {
       speechSynthesis.cancel();
     }
     setIsSpeaking(false);
@@ -477,10 +554,14 @@ export function EDDashboard({ onPatientAdd }: EDDashboardProps) {
   const askCurrentQuestion = async () => {
     if (currentQuestionIndex < triageQuestions.length) {
       // Cancel any ongoing speech first
-      if (speechSynthesis.speaking) {
-        speechSynthesis.cancel();
-        setIsSpeaking(false);
+      if (currentAudioRef.current) {
+        currentAudioRef.current.pause();
+        currentAudioRef.current = null;
       }
+      if ("speechSynthesis" in window && speechSynthesis.speaking) {
+        speechSynthesis.cancel();
+      }
+      setIsSpeaking(false);
 
       // Clear any countdown timer
       clearCountdownTimer();
@@ -501,10 +582,9 @@ export function EDDashboard({ onPatientAdd }: EDDashboardProps) {
     <div className="p-6">
       <div className="max-w-4xl mx-auto">
         {!assessmentStarted ? (
-          <Card className="border-0 shadow-2xl bg-white/80 backdrop-blur-sm">
+          <Card className="bg-gradient-to-br from-gray-50 to-gray-100 border-2 border-gray-200">
             <CardHeader className="text-center pb-8">
-              <CardTitle className="flex items-center justify-center gap-3 text-3xl font-bold text-gray-800">
-                <Volume2 className="h-8 w-8 text-red-600" />
+              <CardTitle className="text-3xl font-bold text-gray-800">
                 Voice Triage Assessment
               </CardTitle>
               <p className="text-xl text-gray-600 mt-4">
@@ -518,7 +598,7 @@ export function EDDashboard({ onPatientAdd }: EDDashboardProps) {
                 size="lg"
                 className="text-xl py-6 px-12 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 shadow-lg transform hover:scale-105 transition-all duration-200"
               >
-                <Play className="h-6 w-6 mr-3" />
+                <Volume2 className="h-7 w-7 mr-3" />
                 Start Voice Assessment
               </Button>
 
