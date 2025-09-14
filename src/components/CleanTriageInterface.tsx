@@ -19,6 +19,7 @@ import {
   AlertTriangle
 } from "lucide-react";
 import { PainDetector } from "./PainDetector";
+import { HeartRateMonitor } from "./HeartRateMonitor";
 
 interface CleanTriageInterfaceProps {
   onPatientAdd: (patient: any) => void;
@@ -85,6 +86,8 @@ export function CleanTriageInterface({ onPatientAdd }: CleanTriageInterfaceProps
   const [transcript, setTranscript] = useState("");
   const [assessmentStarted, setAssessmentStarted] = useState(false);
   const [assessmentComplete, setAssessmentComplete] = useState(false);
+  const [showHeartRateMonitor, setShowHeartRateMonitor] = useState(false);
+  const [vitalsData, setVitalsData] = useState<{heartRate: number; respiratoryRate: number} | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [completedFormData, setCompletedFormData] = useState<FormData | null>(null);
@@ -506,8 +509,8 @@ export function CleanTriageInterface({ onPatientAdd }: CleanTriageInterfaceProps
       await speakText(data.question);
 
     } else if (data.type === "complete") {
-      // Assessment complete
-      setAssessmentComplete(true);
+      // Questions complete, now show heart rate monitor
+      setShowHeartRateMonitor(true);
 
       // Update final form data with last answer - use ref to get current data
       let finalFormData = { ...formDataRef.current };
@@ -540,44 +543,73 @@ export function CleanTriageInterface({ onPatientAdd }: CleanTriageInterfaceProps
 
       console.log('🎯 Final form data for display:', finalFormData);
 
-      // Log current pain data state before sending
-      console.log('💊 Current pain data state before completion:', {
-        levels: painData.levels,
-        confidences: painData.confidences,
-        averagePain: painData.averagePain,
-        maxPain: painData.maxPain,
-        levelCount: painData.levels.length
-      });
-
-      const painAssessment = {
-        average_pain: painData.averagePain,
-        max_pain: painData.maxPain,
-        pain_readings: painData.levels.length,
-        overall_confidence: painData.confidences.length > 0
-          ? painData.confidences.reduce((a, b) => a + b, 0) / painData.confidences.length
-          : 0,
-        // Convert to 1-10 scale for medical vitals
-        medical_pain_level: convertPainScale(painData.averagePain)
-      };
-
-      console.log('💊 Formatted pain assessment for database:', painAssessment);
-
-      const completePatientData = {
-        ...finalFormData,
-        patient_id: data.patient_id,
-        urgency_score: data.urgency_score,
-        triage_level: data.triage_level,
-        pain_assessment: painAssessment
-      };
-
-      console.log('🏥 Complete patient data being sent to parent component:', completePatientData);
-
-      // Notify parent component with updated form data and pain assessment
-      onPatientAdd(completePatientData);
-
-      await speakText(data.message, false); // Don't continue listening after completion
-      toast.success("Assessment complete!");
+      // Speak the transition message to heart rate monitoring
+      await speakText("Thank you for answering all the questions. Now we'll measure your heart rate and breathing rate. Please stay calm and look at the camera.", false);
     }
+  };
+
+  const handleHeartRateComplete = async (vitals: {heartRate: number; respiratoryRate: number}) => {
+    setVitalsData(vitals);
+    setShowHeartRateMonitor(false);
+
+    // Complete the assessment with all data
+    await completeAssessment(vitals);
+  };
+
+  const handleHeartRateCancel = () => {
+    setShowHeartRateMonitor(false);
+    // Complete with default vitals
+    completeAssessment({ heartRate: 0, respiratoryRate: 0 });
+  };
+
+  const completeAssessment = async (vitals: {heartRate: number; respiratoryRate: number}) => {
+    setAssessmentComplete(true);
+
+    const finalFormData = completedFormData || formDataRef.current;
+
+    // Log current pain data state before sending
+    console.log('💊 Current pain data state before completion:', {
+      levels: painData.levels,
+      confidences: painData.confidences,
+      averagePain: painData.averagePain,
+      maxPain: painData.maxPain,
+      levelCount: painData.levels.length
+    });
+
+    const painAssessment = {
+      average_pain: painData.averagePain,
+      max_pain: painData.maxPain,
+      pain_readings: painData.levels.length,
+      overall_confidence: painData.confidences.length > 0
+        ? painData.confidences.reduce((a, b) => a + b, 0) / painData.confidences.length
+        : 0,
+      // Convert to 1-10 scale for medical vitals
+      medical_pain_level: convertPainScale(painData.averagePain)
+    };
+
+    console.log('💊 Formatted pain assessment for database:', painAssessment);
+
+    const completePatientData = {
+      ...finalFormData,
+      patient_id: Date.now().toString(), // Generate ID if not provided
+      urgency_score: 5, // Default value
+      triage_level: 3, // Default value
+      pain_assessment: painAssessment,
+      vitals: {
+        heartRate: vitals.heartRate,
+        respiratoryRate: vitals.respiratoryRate,
+        painLevel: painAssessment.medical_pain_level
+      }
+    };
+
+    console.log('🏥 Complete patient data being sent to parent component:', completePatientData);
+
+    // Notify parent component with updated form data and assessments
+    onPatientAdd(completePatientData);
+
+    // Speak completion message
+    await speakText("Assessment complete! Your information has been recorded and you will be called when a doctor is available.", false);
+    toast.success("Assessment complete!");
   };
 
   const resetAssessment = () => {
@@ -598,6 +630,8 @@ export function CleanTriageInterface({ onPatientAdd }: CleanTriageInterfaceProps
     setTotalSteps(8);
     setAssessmentStarted(false);
     setAssessmentComplete(false);
+    setShowHeartRateMonitor(false);
+    setVitalsData(null);
     setTranscript("");
     setErrorMessage(null);
     setCompletedFormData(null);
@@ -643,6 +677,14 @@ export function CleanTriageInterface({ onPatientAdd }: CleanTriageInterfaceProps
               </div>
             </CardContent>
           </Card>
+        ) : showHeartRateMonitor ? (
+          <div className="flex justify-center">
+            <HeartRateMonitor
+              onComplete={handleHeartRateComplete}
+              onCancel={handleHeartRateCancel}
+              duration={30}
+            />
+          </div>
         ) : assessmentComplete ? (
           <Card className="border-0 shadow-2xl bg-white/90 backdrop-blur-sm">
             <CardContent className="text-center py-16">
@@ -668,6 +710,12 @@ export function CleanTriageInterface({ onPatientAdd }: CleanTriageInterfaceProps
                   )}
                   {completedFormData?.mobility && (
                     <div className="col-span-2"><strong>Mobility:</strong> {completedFormData.mobility}</div>
+                  )}
+                  {vitalsData && (
+                    <>
+                      <div><strong>Heart Rate:</strong> {vitalsData.heartRate > 0 ? `${Math.round(vitalsData.heartRate)} BPM` : 'Not measured'}</div>
+                      <div><strong>Breathing Rate:</strong> {vitalsData.respiratoryRate > 0 ? `${Math.round(vitalsData.respiratoryRate)} BPM` : 'Not measured'}</div>
+                    </>
                   )}
                 </div>
               </div>
