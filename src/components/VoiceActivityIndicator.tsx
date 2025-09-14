@@ -369,7 +369,7 @@ export const VoiceActivityIndicator: React.FC<VoiceActivityIndicatorProps> = ({
 
   if (!isActive) return null;
 
-  // Generate organic blob path for voice-responsive circles
+  // Generate organic blob path for voice-responsive circles with proper validation
   const generateBlobPath = (
     centerX: number,
     centerY: number,
@@ -377,33 +377,72 @@ export const VoiceActivityIndicator: React.FC<VoiceActivityIndicatorProps> = ({
     audioLevels: number[],
     sensitivity: number = 1
   ) => {
-    if (!audioLevels.length || Math.max(...audioLevels) === 0) {
-      // Perfect circle when no audio
-      return `M ${centerX - baseRadius} ${centerY} 
-              A ${baseRadius} ${baseRadius} 0 1 1 ${
-        centerX + baseRadius
-      } ${centerY} 
-              A ${baseRadius} ${baseRadius} 0 1 1 ${
-        centerX - baseRadius
-      } ${centerY}`;
+    // Validate inputs
+    if (
+      !Number.isFinite(centerX) ||
+      !Number.isFinite(centerY) ||
+      !Number.isFinite(baseRadius) ||
+      baseRadius <= 0
+    ) {
+      return `M ${40} ${10} A 30 30 0 1 0 ${40} ${70} A 30 30 0 1 0 ${40} ${10} Z`; // Safe fallback circle
+    }
+
+    if (
+      !audioLevels.length ||
+      Math.max(...audioLevels) === 0 ||
+      !audioLevels.every((level) => Number.isFinite(level))
+    ) {
+      // Perfect circle when no audio or invalid levels
+      return `M ${centerX} ${
+        centerY - baseRadius
+      } A ${baseRadius} ${baseRadius} 0 1 0 ${centerX} ${
+        centerY + baseRadius
+      } A ${baseRadius} ${baseRadius} 0 1 0 ${centerX} ${
+        centerY - baseRadius
+      } Z`;
     }
 
     const points: Array<{ x: number; y: number }> = [];
     const numPoints = 12; // More points for smoother deformation
+    const safeAudioLevels = audioLevels.map((level) =>
+      Math.max(0, Math.min(1, level))
+    ); // Clamp to 0-1
 
     for (let i = 0; i < numPoints; i++) {
       const angle = (i / numPoints) * 2 * Math.PI;
-      const levelIndex = i % audioLevels.length;
-      const audioLevel = audioLevels[levelIndex] || 0;
+      const levelIndex = i % safeAudioLevels.length;
+      const audioLevel = safeAudioLevels[levelIndex] || 0;
 
       // Subtle deformation that maintains circular shape with minimal flexing
-      const normalizedLevel = (audioLevel - 0.5) * 2; // Range from -1 to 1
-      const radiusVariation = normalizedLevel * baseRadius * 0.05 * sensitivity; // Much smaller variation
-      const radius = baseRadius + radiusVariation;
+      const normalizedLevel = Math.max(-1, Math.min(1, (audioLevel - 0.5) * 2)); // Range from -1 to 1, clamped
+      const radiusVariation =
+        normalizedLevel *
+        baseRadius *
+        0.05 *
+        Math.max(0, Math.min(1, sensitivity)); // Clamp sensitivity
+      const radius = Math.max(baseRadius * 0.85, baseRadius + radiusVariation);
 
-      const x = centerX + Math.cos(angle) * Math.max(radius, baseRadius * 0.85); // Higher minimum radius
-      const y = centerY + Math.sin(angle) * Math.max(radius, baseRadius * 0.85);
-      points.push({ x, y });
+      const x = centerX + Math.cos(angle) * radius;
+      const y = centerY + Math.sin(angle) * radius;
+
+      // Validate calculated points
+      if (Number.isFinite(x) && Number.isFinite(y)) {
+        points.push({
+          x: Math.round(x * 100) / 100,
+          y: Math.round(y * 100) / 100,
+        }); // Round to avoid floating point issues
+      }
+    }
+
+    // Fallback to circle if we don't have enough valid points
+    if (points.length < 3) {
+      return `M ${centerX} ${
+        centerY - baseRadius
+      } A ${baseRadius} ${baseRadius} 0 1 0 ${centerX} ${
+        centerY + baseRadius
+      } A ${baseRadius} ${baseRadius} 0 1 0 ${centerX} ${
+        centerY - baseRadius
+      } Z`;
     }
 
     // Create smooth cubic bezier curves
@@ -415,13 +454,27 @@ export const VoiceActivityIndicator: React.FC<VoiceActivityIndicatorProps> = ({
       const prev = points[i === 0 ? points.length - 1 : i - 1];
       const afterNext = points[(i + 2) % points.length];
 
-      // Smooth control points
+      // Smooth control points with validation
       const cp1x = current.x + (next.x - prev.x) * 0.25;
       const cp1y = current.y + (next.y - prev.y) * 0.25;
       const cp2x = next.x - (afterNext.x - current.x) * 0.25;
       const cp2y = next.y - (afterNext.y - current.y) * 0.25;
 
-      pathData += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${next.x} ${next.y}`;
+      // Validate control points
+      if (
+        Number.isFinite(cp1x) &&
+        Number.isFinite(cp1y) &&
+        Number.isFinite(cp2x) &&
+        Number.isFinite(cp2y)
+      ) {
+        pathData += ` C ${Math.round(cp1x * 100) / 100} ${
+          Math.round(cp1y * 100) / 100
+        }, ${Math.round(cp2x * 100) / 100} ${Math.round(cp2y * 100) / 100}, ${
+          next.x
+        } ${next.y}`;
+      } else {
+        pathData += ` L ${next.x} ${next.y}`; // Fallback to line if bezier is invalid
+      }
     }
 
     pathData += " Z";
@@ -444,25 +497,39 @@ export const VoiceActivityIndicator: React.FC<VoiceActivityIndicatorProps> = ({
             opacity="0.3"
           />
 
-          {/* Moderately sensitive middle circle - same size as reference */}
-          <motion.path
+          {/* Moderately sensitive middle circle - with initial values */}
+          <motion.circle
+            cx="40"
+            cy="40"
             fill="none"
             stroke="#f87171"
             strokeWidth="2"
+            initial={{ r: 30, opacity: 0.6 }}
             animate={{
-              d: generateBlobPath(40, 40, 30, audioLevels.slice(0, 6), 0.4),
+              r:
+                30 +
+                (audioLevels.length > 0
+                  ? Math.max(...audioLevels.slice(0, 6)) * 3
+                  : 0),
               opacity: 0.6,
             }}
             transition={{ duration: 0.2, ease: "easeOut" }}
           />
 
-          {/* Highly sensitive inner circle - smaller circumference */}
-          <motion.path
+          {/* Highly sensitive inner circle - with initial values */}
+          <motion.circle
+            cx="40"
+            cy="40"
             fill="none"
             stroke="#ef4444"
             strokeWidth="2"
+            initial={{ r: 24, opacity: 0.8 }}
             animate={{
-              d: generateBlobPath(40, 40, 24, audioLevels.slice(2, 8), 0.7),
+              r:
+                24 +
+                (audioLevels.length > 2
+                  ? Math.max(...audioLevels.slice(2, 8)) * 4
+                  : 0),
               opacity: 0.8,
             }}
             transition={{ duration: 0.1, ease: "easeOut" }}

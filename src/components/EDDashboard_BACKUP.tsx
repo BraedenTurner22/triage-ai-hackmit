@@ -563,12 +563,29 @@ export function EDDashboard({ onPatientAdd }: EDDashboardProps) {
     recognition.onend = () => {
       console.log(`🛑 RECOGNITION ENDED with result: "${finalResult}"`);
       setIsListening(false);
-      setListeningPhase("processing");
       
       if (finalResult.trim()) {
         console.log(`🎯 PROCESSING: "${finalResult}"`);
-        // Use the existing processCapturedSpeech function to maintain compatibility
-        processCapturedSpeech(finalResult.trim());
+        
+        // Get current question and save response DIRECTLY
+        const currentQuestion = triageQuestions[currentQuestionIndex];
+        console.log(`💾 Saving "${finalResult}" to question ${currentQuestion.id} (index ${currentQuestionIndex})`);
+        
+        setResponses(prev => {
+          const newResponses = {
+            ...prev,
+            [currentQuestion.id]: finalResult.trim()
+          };
+          console.log("📋 Updated responses object:", newResponses);
+          return newResponses;
+        });
+        
+        // Move to next question
+        console.log("⏭️ Moving to next question in 1 second");
+        setTimeout(() => {
+          moveToNextQuestion();
+        }, 1000);
+        
       } else {
         console.log("❌ No speech captured - skipping to next question");
         setTimeout(() => {

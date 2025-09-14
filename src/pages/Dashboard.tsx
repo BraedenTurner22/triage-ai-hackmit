@@ -272,6 +272,14 @@ const Dashboard = () => {
   const waitTimeChartOptions = {
     responsive: true,
     maintainAspectRatio: false,
+    layout: {
+      padding: {
+        left: 20,
+        right: 10,
+        top: 10,
+        bottom: 10,
+      },
+    },
     plugins: {
       legend: {
         position: "bottom" as const,
@@ -296,11 +304,17 @@ const Dashboard = () => {
           display: true,
           text: "Wait Time (minutes)",
         },
+        ticks: {
+          maxTicksLimit: 6,
+        },
       },
       x: {
         title: {
           display: true,
           text: "Patients (sorted by wait time)",
+        },
+        ticks: {
+          maxRotation: 45,
         },
       },
     },
@@ -467,7 +481,7 @@ const Dashboard = () => {
                                   </span>
                                 </div>
                                 {stats.waitTimeData.length > 0 ? (
-                                  <div className="h-48 w-full">
+                                  <div className="h-56 w-full">
                                     <Bar
                                       data={waitTimeChartData}
                                       options={waitTimeChartOptions}
