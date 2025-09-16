@@ -59,7 +59,7 @@ Before running the application, ensure you have:
 ### 1. Clone the Repository
 
 ```bash
-git clone <YOUR_GIT_URL>
+git clone git@github.com:BraedenTurner22/triage-ai-hackmit.git 
 cd triage-ai-hackmit
 ```
 
